@@ -173,8 +173,6 @@ plot_partial_residuals <- function(df, analysis_var, response_var="SalePrice", e
   
   df <- add_shading_variable(fit=fit, df=df, shade_by_case=shade_by_case)
   
-  #return(df)
-  
   p <- ggplot() +
     geom_point(data=df, mapping=aes(x=analysis_variable, y=partial_resid,  color=shade_by_case), alpha=alpha) +
     xlab(plot_labels$xlabel) + 
@@ -378,9 +376,15 @@ plot_scatter <- function(data, x_var, y_var, shade_var=NULL, shape_var=NULL,
                          reg_linecolor="#ffa600", conf_linecolor="#bc5090", pred_linecolor="#003f5c",
                          conf_linetype="solid", pred_linetype="dashed", round_digits=5, reg_table=TRUE,
                          table_loc="upper_left", filter_column=NULL, keep_values=NULL, 
-                         remove_less_than=NULL, remove_greater_than=NULL){
+                         remove_less_than=NULL, remove_greater_than=NULL, identify_obs=FALSE, 
+                         obs_txt_color="red", obs_txt_size=3, obs_txt_vjust=-0.4, obs_txt_hjust=0,
+                         remove_obs_numbers=NULL){
   
   df <- data
+  
+  df <- add_obs_number_column(df)
+  
+  df <- filter_by_observation_numbers(df, observation_numbers=remove_obs_numbers)
   
   data_list <- get_plotting_data(df=df, 
                                  x_var=x_var, y_var=y_var, 
@@ -398,6 +402,11 @@ plot_scatter <- function(data, x_var, y_var, shade_var=NULL, shape_var=NULL,
     geom_point(aes(color=shading_variable, shape=shape_variable, size=size_variable), alpha=alpha) +
     scale_shape_manual(values=1:nlevels(shape_variable)) + 
     scale_size_area(max_size=max_size, guide=size_guide)
+  
+  # If we want points to point their observation number, for investigative purposes
+  p <- add_obs_numbers(p=p, df=df, obs_txt_color=obs_txt_color, obs_txt_size=obs_txt_size, obs_txt_vjust=obs_txt_vjust, 
+                       obs_txt_hjust=obs_txt_hjust, identify_obs=identify_obs, x_var=x_var, y_var=y_var, 
+                       called_from="scatter")
   
   p <- add_legend_data(p, shade_var, shape_var)
   

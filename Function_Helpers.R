@@ -423,23 +423,35 @@ add_point_removal_comparison_line <- function(p, df, x_var, y_var, linecolor, li
 }
 
 add_obs_numbers <- function(p, df, obs_txt_size, obs_txt_color,
-                            obs_txt_vjust, obs_txt_hjust, identify_obs) {
+                            obs_txt_vjust, obs_txt_hjust, identify_obs, 
+                            x_var=NULL, y_var=NULL, called_from=NULL) {
   
   if(typeof(identify_obs) == "logical" && !identify_obs){
     return(p)
+  }
+  
+  # If we didn't call this function from the plot_partial_residuals function 
+  if(!is.null(called_from)){
+    
+    # This section of code only runs when called from plot_scatter, so these names aren't correct,
+    # it is a little messy, but its the result of reusing this function for a secondary purpose (it 
+    # was originally designed to add obs_numbers to the partial residual plots, but can be repurposed to
+    # add obs_numbers to other plots too, just need the name to match).
+    df[,"partial_resid"] <- df[,y_var]
+    df[,"analysis_variable"] <- df[,x_var]
   }
   
   # If we don't want to identify all observatins, filter based on the vector passed
   # to identify_obs
   if(typeof(identify_obs) != "logical"){
     df <- df[df[,"obs_number"] %in% identify_obs,]
+    
   }
   
   p <- p + geom_text(data=df, mapping=aes(x=analysis_variable, y=partial_resid, label=obs_number), 
                      hjust=obs_txt_hjust, vjust=obs_txt_vjust, color=obs_txt_color, size=obs_txt_size)
   
   return(p)
-  
 }
 
 add_shading_variable <- function(fit, df, shade_by_case){
@@ -1096,6 +1108,18 @@ filter_scatter_data <- function(df, filter_column, keep_values, remove_less_than
  
   return(df)
   
+}
+
+filter_by_observation_numbers <- function(df, observation_numbers){
+  
+  if(is.null(observation_numbers)){
+    return(df)
+  }
+  
+  # Remove the desired observation numbers
+  df <- df[!(df[,"obs_number"] %in% observation_numbers),]
+  
+  return(df)
 }
 
 get_plotting_data <- function(df, x_var, y_var, shade_var, shape_var, size_var, keep_values, 
