@@ -1338,3 +1338,95 @@ add_regression_and_title <- function(df, show_regression, p, conf_level, pred_ba
 ################################### END SCATTER PLOT SECTION #####################################
 ##################################################################################################
 
+
+############################## SEPARATE/PARALLEL LINES MODEL SECTION  ############################### 
+
+
+get_adjustment_terms <- function(coefficients, explanatory_continuous, explantory_grouping){
+  
+  cfs_names <- names(coefficients)
+  
+  intercept_adjustments <- c()
+  slope_adjustments <- c()
+  for(name_index in 1:length(cfs_names)){
+    
+    current_name <- cfs_names[name_index]
+    
+    contains_grouping <- stringr::str_detect(string=current_name, pattern=explantory_grouping)
+    contains_continuous <- stringr::str_detect(string=current_name, pattern=explanatory_continuous)
+    is_interaction <- contains_grouping & contains_continuous
+    
+    if(is_interaction){
+      
+      slope_adjustments <- append(x=slope_adjustments, 
+                                  values=current_name)
+    }
+    else if(contains_grouping){
+      intercept_adjustments <- append(x=intercept_adjustments, 
+                                      values=current_name)
+      
+    }else if(current_name == explanatory_continuous){
+      base_slope <- current_name
+    }
+    else if(current_name == "(Intercept)"){
+      base_intercept <- current_name
+    }
+    
+  }
+  
+  terms <- list(slope_adj=slope_adjustments,
+                int_adjs=intercept_adjustments,
+                base_slope=base_slope,
+                base_intercept=base_intercept)
+  
+  return(terms)
+}
+
+
+plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, explantory_grouping){
+  
+  # Get the coefficients for the MLR model
+  coefficients <- fit$coefficients
+  
+  # Sort the coefs into base intercept, base slope, intercept adjustments and slope adjustments
+  model_term_names <- get_adjustment_terms(coefficients=coefficients,
+                                           explanatory_continuous=explanatory_continuous, 
+                                           explantory_grouping=explantory_grouping)
+  
+  num_lines <- length(model_term_names$int_adjs) + 1
+  
+  base_intercept_value <- coefficients[[model_term_names$base_intercept]]
+  base_slope_value <- coefficients[[model_term_names$base_slope]]
+  
+  
+  for(line_num in 1:num_lines){
+    
+    if(line_num == 1){
+      intercept_term <- base_intercept_value
+      slope_term <- base_slope_value
+    } else{
+      intercept_term <- base_intercept_value + coefficients[[model_term_names$int_adjs[line_num - 1]]]
+      
+      # If the lines have separate slopes, else they are parallel lines with the same slope
+      if(model_type == "separate_lines") {
+        slope_term <- base_slope_value + coefficients[[model_term_names$slope_adj[line_num -1]]]
+      }
+      else{
+        slope_term <- base_slope_value
+      }
+    }
+    
+    p <- p + 
+      geom_abline(slope=slope_term,
+                  intercept=intercept_term,
+                  linetype="solid",
+                  color="red", show.legend=TRUE)
+    
+  }
+  
+  return(p)
+}
+
+############################## END SEPARATE/PARALLEL LINES MODEL SECTION  #############################
+
+

@@ -424,3 +424,53 @@ plot_scatter <- function(data, x_var, y_var, shade_var=NULL, shape_var=NULL,
 
 
 #################################### END SCATTER PLOT SECTION #######################################
+
+
+
+
+############################## SEPARATE/PARALLEL LINES MODEL SECTION  ############################### 
+
+
+plot_slr_via_mlr <- function(fit, df, explanatory_continuous="GrLivArea", explantory_grouping="Neighborhood",
+                             response="SalePrice", model_type="separate_lines"){
+  
+  
+  
+  
+  p <- plot_scatter(data=df, x_var=explanatory_continuous, y_var=response, shade_var=explantory_grouping)
+  
+  p <- plot_all_mlr_lines(p=p, fit=fit, model_type=model_type, explantory_grouping=explantory_grouping,
+                          explanatory_continuous=explanatory_continuous)
+  
+  if(model_type == "separate_lines"){
+    model_title <- "Separate Lines"
+  }else{
+    model_title <- "Parallel Lines"
+  }
+  
+  p <- p + ggtitle(paste0(model_title, " Model of ", response, " vs ", explanatory_continuous, " for each ", explantory_grouping))
+  
+  return(p)
+  
+}
+
+
+############################## END SEPARATE/PARALLEL LINES MODEL SECTION  ############################### 
+
+
+
+#################################### HYPOTHESIS TEST SECTION  #################################### 
+
+partial_f_test <- function(full_model, reduced_model){
+  
+  partial_f_test_result <- anova(reduced_model, full_model)
+  return(partial_f_test_result)
+  
+}
+
+
+
+
+#################################### END HYPOTHESIS TEST SECTION  ####################################
+
+

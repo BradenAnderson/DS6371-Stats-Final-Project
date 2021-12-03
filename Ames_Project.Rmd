@@ -14,11 +14,9 @@ source("./Functions.R")
 
 ```{r}
 df <- read.csv("./train.csv")
-head(full_df)
+head(df)
 
 ```
-
-
 ```{r}
 
 # Filter dataframe such that it only includes rows where the neighborhood column
@@ -35,11 +33,110 @@ unique(century_df[,"Neighborhood"])
 
 ```
 
+```{r}
+
+df[,"Neighborhood"] <- factor(df[,"Neighborhood"])
+century_df[,"Neighborhood"] <- factor(century_df[,"Neighborhood"])
+
+```
+
+```{r}
+
+# NOTES AND PART 1 OUTLINE:
+
+# 1) Equal Lines Model <-- Single regression line for all neighborhoods 
+# 2) Parallel lines model <-- The neighborhood effects it at constant amount across all values of the response
+# 3) Separate lines model <-- The neighborhood effects the slope (interaction terms)
+
+# Statistical slueth page 250: When to Include Interaction Terms
+# 1) When a question of interest pertains to interaction (meadowfoam study)
+# 2) When good reason exists to suspect interaction
+# 3) When interactions are proposed as a more general model for the purpose of examining
+#    the goodness of fit for a model without interaction.
+
+# Questions of interest:
+# 1) How does the SalePrice of a house relate to the square footage of the house (GrLivArea)?
+# 2) Does the relationship between SalePrice and square footage depend on what neighborhood the house is located in?
+
+# STRATEGY FOR QUESTION OF INTEREST #2:
+#
+# Step 1: Start with the fullest model (separate lines model)
+#
+# Step 2: Examine the residual plots for the separate lines model to check if the
+#         assumptions for an F-test are met. 
+#
+# Step 3: If assumptions are met, perform a partial F-test for the hypothesis that
+#         the interaction terms can be dropped. (i.e. use the separate lines model
+#         as the full model and the parallel lines model as the reduced model to check if
+#         we can reduce down to using the parallel lines model). A high p-value indicates that
+#         the parallel lines model is adequate.
+#
+# NOTE: Step 3 essentially asks the question, does the relationship between SalePrice and house
+#       size change based on what neighborhood you are in? If p-value is high, the slopes can be 
+#       the same (parallel lines), and the answer can be: No, the relationship does not change
+#       based on neighborhood. If the slopes cannot be the same, the relatioship does change based
+#       on neighborhood.
+#
+# Step 4: If Step 3 showed that the interaction terms can be dropped, we may want to perform
+#         another partial F-test for the hypothesis that the intercepts in the parallel lines
+#         models are the same (i.e. full model=parallel lines, reduced model=equal lines).
+#
+# NOTE: Step 4 does not have an entirely logical interpretation in the context of the problem, 
+#       because it essentially asks "Does the SalePrice of a house with a square footage of zero
+#       change based on what neighborhood you're in?". (A more useful interpretation may be, does the
+#       minimum house price change based on what neighborhood you're in, however interpreting this way
+#       seems shaky because that is not really what the intercept represents). It must also be noted
+#       that attempting to interpret the intercept here is dangerous to begin with, as the minmum
+#       house size in the entire dataset is 334 square feet, therefore statements made about houses
+#       with square footage below this value require extrapolation, and are therefore dangerous and unlikely
+#       to be useful.
+
+```
+
+
+
+#Model 1: Separate Lines Model
+```{r}
+
+separate_fits <- lm(SalePrice~GrLivArea+
+                      relevel(Neighborhood, ref="NAmes")+             # Add intercept adjustment terms
+                      relevel(Neighborhood, ref="NAmes"):GrLivArea,   # Add interaction terms (slope adjustments)
+                    data=century_df)
+
+summary(separate_fits)
+```
+
+
+
+```{r}
+
+plot_slr_via_mlr(fit=separate_fits, 
+                 df=century_df,
+                 model_type="parallel_lines",
+                 explanatory_continuous="GrLivArea", 
+                 explantory_grouping="Neighborhood",
+                 response="SalePrice")
+
+```
+
+
+
+# NOTE: ALL CODE BELOW THIS POINT NEEDS UPDATING!
+# Model 1: Equal Lines Model
+```{r}
+
+fit <- lm(SalePrice~GrLivArea, 
+          data=century_df)
+
+summary(fit)
+```
+
 
 # Check Model Assumptions
 
 # Linearity Assumption
 ```{r}
+plot_scatter()
 
 interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
 
@@ -67,28 +164,6 @@ plot_scatter(data=century_df,
 # homes that had a unusually low sale price. 
 ```
 
-
-
-```{r}
-
-# 1) Equal Lines Model <-- Single regression line for all neighborhoods 
-
-# Does the relationship between sales and living area depend on the neighborhood?
-# If yes:
-# 2) Parallel lines model <-- The neighborhood effects it at constant ammount across all values of the response
-# 3) Separate lines model <-- The neighborhood effects the slope
-
-```
-
-
-# Model 1: Equal Lines Model
-```{r}
-
-fit <- lm(SalePrice~GrLivArea, 
-          data=century_df)
-
-summary(fit)
-```
 
 
 ```{r, fig.height=4, fig.width=8}
@@ -124,9 +199,11 @@ plot_residual_qq(fit=fit,
 
 
 # Based on the QQPlot of the residuals shown below, we see that overall the quantiles of the residuals are
-# linearly related to the theoretical quantiles of the normal distribution. That said, we again note that there are still
-# the same few observations raising concern as they do not meet the normality assumption. 
-# In particular observation 339 is causing some skew that violates the normality assumption. 
+# linearly related to the theoretical quantiles of the normal distribution. That said, we again note that there
+# are still the same few observations raising concern as they do not meet the normality assumption. 
+# An "S" shape in a residual QQPlot indicates that one of the distributions (the observed or theoretical), has a 
+# longer tails than the other. Here we see observation 339, and perhaps 169 and 190 as well being the
+# source of some long-tailedness which violates the normality assumption. 
 ```
 
 
@@ -181,10 +258,17 @@ plot_residuals(fit,
 
 ```
 
-# Model 2: Parallel Lines Model
+# Look for Influential Observations
 ```{r}
 
-century_df[,"Neighborhood"] <- factor(century_df[,"Neighborhood"])
+plot_residual_vs_leverage(fit=fit) 
+
+```
+
+
+
+# Model 2: Parallel Lines Model
+```{r}
 
 # Parallel lines model
 parallel_fit <- lm(SalePrice~GrLivArea+
@@ -195,16 +279,7 @@ summary(parallel_fit)
 ```
 
 
-#Model 3: Separate Lines Model
-```{r}
 
-separate_fits <- lm(SalePrice~GrLivArea+
-                      relevel(Neighborhood, ref="NAmes")+             # Add intercept adjustment terms
-                      relevel(Neighborhood, ref="NAmes"):GrLivArea,   # Add interaction terms (slope adjustments)
-                    data=century_df)
-
-summary(separate_fits)
-```
 
 
 ```{r}
