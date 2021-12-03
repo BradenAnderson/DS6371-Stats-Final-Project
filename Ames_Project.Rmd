@@ -13,43 +13,128 @@ source("./Functions.R")
 
 
 ```{r}
-
-small_df <- read.csv("./Practice_House_Data.csv")
-head(small_df)
-```
-
-
-```{r}
-
-full_df <- read.csv("./train.csv")
+df <- read.csv("./train.csv")
 head(full_df)
 
-#Testing
 ```
 
+
+# Check Model Assumptions
+
+# Linearity Assumption
+```{r}
+
+interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
+
+# Basic scatter plot of SalePrice vs GrLivArea
+# Neighborhood column filtered to three neighborhoods of interest.
+# Points colored based on neighborhood column, 
+# Regression line added
+plot_scatter(data=df, 
+             y_var="SalePrice", 
+             x_var="GrLivArea", 
+             filter_column="Neighborhood", 
+             keep_values=interesting_neighborhoods, 
+             shade_var = "Neighborhood", 
+             show_regression=FALSE, 
+             reg_table=FALSE)
+
+# The scatterplot shows some evidence of a linear trend, however there are a couple concering (outlier) observations
+# that should be investigated. These observations are in the Edwards neighborhood and are large homes that had a 
+# unusually low sale price. 
+
+```
+
+```{r}
+
+df <- read.csv("./train.csv")
+
+# Filter dataframe such that it only includes rows where the neighborhood column
+# is one of the neighborhoods we are interested in for the part 1 analysis.
+interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
+
+df <- df[(df[,"Neighborhood"] %in% interesting_neighborhoods), ]
+unique(df[,"Neighborhood"])
+
+```
 
 
 ```{r}
 
+# 1) Single regression for all neighborhoods
 
-```
-
-
-
-```{r}
-
-
-```
-
-
-```{r}
-
+# Does the relationship between sales and living area depend on the neighborhood?
+# If yes:
+# 2) Parallel lines model <-- The neighborhood effects it at constant ammount across all values of the response
+# 3) Separate lines model <-- The neighborhood effects the slope
 
 ```
 
 
 ```{r}
 
+df[,"Neighborhood"] <- factor(df[,"Neighborhood"])
+
+# Parallel lines model
+parallel_fit <- lm(SalePrice~GrLivArea+relevel(Neighborhood, ref="NAmes"), 
+                   data=df)
+
+```
+
+```{r}
+
+fit <- lm(SalePrice~GrLivArea, 
+          data=df)
+
+
+summary(fit)
+```
+
+```{r, fig.height=4, fig.width=8}
+
+plot_residuals(fit, 
+               residual_type="regular", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+# The majority of the residual plot is a reasonable representation of the ideal "random cloud", indicating
+# that the linearity assumption is met for the majority of the data. However as mentioned with the scatterplot,
+# we see a couple outlieing observations that violate this assumption. 
+```
+
+# Indepdence Assumption
+```{r}
+
+# From the residual plot above, do not see any "tracking" in the residuals. Based on how the data was collected
+# we do not have a reason to suspect that serial or cluster effects exist. We will proceed with this assumption
+# being met.
+
+```
+
+
+# Normality Assumption
+```{r}
+
+plot_residual_qq(fit=fit, 
+                 residual_type = "regular")
+
+
+# Based on the QQPlot of the residuals shown below, we see that the quantiles of the residuals are
+# linearly related to the theoretical quantiles of the normal distribution. However there are still
+# the same observations raising concern. We can see that observation 339 in particular is causing
+# some skew that violates the normality assumption. 
+```
+
+
+```{r}
+
+plot_residual_histogram(fit=fit, 
+                        residual_type="regular")
+
+# The residual histogram confirms what we see in the residual qqplot. There are a few observations
+# that are causing some skew which violates the normality of errors assumption.
 
 ```
 
