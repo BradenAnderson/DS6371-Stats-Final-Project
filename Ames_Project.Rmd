@@ -38,6 +38,8 @@ unique(century_df[,"Neighborhood"])
 df[,"Neighborhood"] <- factor(df[,"Neighborhood"])
 century_df[,"Neighborhood"] <- factor(century_df[,"Neighborhood"])
 
+help(case)
+
 ```
 
 ```{r}
