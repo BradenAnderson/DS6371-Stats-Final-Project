@@ -1,6 +1,11 @@
 library(tidyverse)
 library(ggpmisc)
 library(stringr)
+library(car)
+library(utilities)
+library(HH)
+library(patchwork)
+library(EnvStats)
 
 #################################### PLOT LABELING #######################################
 
