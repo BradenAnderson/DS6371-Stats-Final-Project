@@ -1,6 +1,6 @@
 ---
 title: "Ames_Project"
-author: "Braden Anderson"
+author: "Braden Anderson and Rayon Morris"
 date: "12/2/2021"
 output: html_document
 ---
@@ -14,6 +14,81 @@ source("./Functions.R")
 
 ```{r}
 
+small_df <- read.csv("./Practice_House_Data.csv")
+head(small_df)
+```
+
+
+```{r}
+
+full_df <- read.csv("./train.csv")
+head(full_df)
+```
+
+
+
+```{r}
+
 
 ```
 
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
