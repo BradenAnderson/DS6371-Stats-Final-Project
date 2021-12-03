@@ -19,6 +19,23 @@ head(full_df)
 ```
 
 
+```{r}
+
+# Filter dataframe such that it only includes rows where the neighborhood column
+# is one of the neighborhoods we are interested in for the part 1 analysis.
+
+# Neighborhoods that Century 21 Ames real estate sells in
+interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
+
+# Create a new dataframe that only contains the neighborhoods Centry 21 Ames sells in
+century_df <- df[(df[,"Neighborhood"] %in% interesting_neighborhoods), ]
+
+# Verify the new dataframe only contains the neighborhoods: NAmes, Edwards, and BrkSide
+unique(century_df[,"Neighborhood"])
+
+```
+
+
 # Check Model Assumptions
 
 # Linearity Assumption
@@ -30,38 +47,31 @@ interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
 # Neighborhood column filtered to three neighborhoods of interest.
 # Points colored based on neighborhood column, 
 # Regression line added
-plot_scatter(data=df, 
+plot_scatter(data=century_df, 
              y_var="SalePrice", 
              x_var="GrLivArea", 
-             filter_column="Neighborhood", 
-             keep_values=interesting_neighborhoods, 
              shade_var = "Neighborhood", 
              show_regression=FALSE, 
-             reg_table=FALSE)
+             reg_table=FALSE,
+             identify_obs = c(131, 339)) # Set to TRUE to ID all observations, or a vector for paricular obs
+                                         
 
-# The scatterplot shows some evidence of a linear trend, however there are a couple concering (outlier) observations
-# that should be investigated. These observations are in the Edwards neighborhood and are large homes that had a 
-# unusually low sale price. 
+# Overall the scatter plot shows strong evidence of a linear trend, however there are a couple concerning (outlier) 
+# observations (which we have flagged as observation numbers 131 and 339) that should be investigated. 
 
+# Note that these observation numbers correspond to the rows in the century_df dataframe which has been filtered to 
+# only contain observations in the three neighborhoods of interest. (Therefore these observation numbers will be different 
+# in the full dataset). 
+
+# Also note that these concerning observations are both in the Edwards neighborhood, and are both large 
+# homes that had a unusually low sale price. 
 ```
 
-```{r}
-
-df <- read.csv("./train.csv")
-
-# Filter dataframe such that it only includes rows where the neighborhood column
-# is one of the neighborhoods we are interested in for the part 1 analysis.
-interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
-
-df <- df[(df[,"Neighborhood"] %in% interesting_neighborhoods), ]
-unique(df[,"Neighborhood"])
-
-```
 
 
 ```{r}
 
-# 1) Single regression for all neighborhoods
+# 1) Equal Lines Model <-- Single regression line for all neighborhoods 
 
 # Does the relationship between sales and living area depend on the neighborhood?
 # If yes:
@@ -71,24 +81,15 @@ unique(df[,"Neighborhood"])
 ```
 
 
-```{r}
-
-df[,"Neighborhood"] <- factor(df[,"Neighborhood"])
-
-# Parallel lines model
-parallel_fit <- lm(SalePrice~GrLivArea+relevel(Neighborhood, ref="NAmes"), 
-                   data=df)
-
-```
-
+# Model 1: Equal Lines Model
 ```{r}
 
 fit <- lm(SalePrice~GrLivArea, 
-          data=df)
-
+          data=century_df)
 
 summary(fit)
 ```
+
 
 ```{r, fig.height=4, fig.width=8}
 
@@ -108,8 +109,9 @@ plot_residuals(fit,
 ```{r}
 
 # From the residual plot above, do not see any "tracking" in the residuals. Based on how the data was collected
-# we do not have a reason to suspect that serial or cluster effects exist. We will proceed with this assumption
-# being met.
+# we do not have a reason to suspect that serial or cluster effects exist. The Independence assumption is always
+# difficult to be completely confident in without intimate knowledge of the data collection process, however
+# we will proceed with caution as if this assumption is met.
 
 ```
 
@@ -121,27 +123,87 @@ plot_residual_qq(fit=fit,
                  residual_type = "regular")
 
 
-# Based on the QQPlot of the residuals shown below, we see that the quantiles of the residuals are
-# linearly related to the theoretical quantiles of the normal distribution. However there are still
-# the same observations raising concern. We can see that observation 339 in particular is causing
-# some skew that violates the normality assumption. 
+# Based on the QQPlot of the residuals shown below, we see that overall the quantiles of the residuals are
+# linearly related to the theoretical quantiles of the normal distribution. That said, we again note that there are still
+# the same few observations raising concern as they do not meet the normality assumption. 
+# In particular observation 339 is causing some skew that violates the normality assumption. 
 ```
 
 
 ```{r}
 
 plot_residual_histogram(fit=fit, 
-                        residual_type="regular")
+                        residual_type="regular", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
 
-# The residual histogram confirms what we see in the residual qqplot. There are a few observations
-# that are causing some skew which violates the normality of errors assumption.
-
+# The residual histogram confirms what we see in the residual QQplot. This plot offers another perspective
+# but tells the same story; that are a few observations causing some significant skew which violates 
+# the normality of errors assumption.
 ```
-
 
 ```{r}
 
+plot_residuals(fit, 
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
 
+# Lastly, we review the plot of externally studentized residuals in the context of the normality assumption.
+# We see that, for the most part, the residuals seem to be normally distributed around zero, and are not
+# consistently shifted in either the positive or negative direction which would be indicative of a 
+# heavily skewed distribution. This plot does help identify some potential outliers that may not fit the
+# normality assumption. In particular, we note that observations 131, 169, 190 and 339 are all more
+# than three standard deviations away from zero and therefore may warrant further inspection.
+```
+
+# Equal Variance Assumption
+```{r}
+
+plot_residuals(fit, 
+               residual_type="regular", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+# Reviewing the residual plot in the context of the equal variance assumption, we do not see any
+# "fanning" or "funnel shaped" pattern in the plot which would clearly indicate of a violation of
+# this assumption. Further, the spread of the residuals about zero seems reasonably consistent across
+# the range of fitted values for most observations, again with the exception of observations 131 and 339.
+# Observations 131 and 339 have rather large residuals, and considering that there are no other
+# observations even close to these fitted values it would be rather unusual to observe such large
+# residuals in 2 out of 2 samples if they truly were drawn from a population with the same variance
+# as the other observations. 
+
+```
+
+# Model 2: Parallel Lines Model
+```{r}
+
+century_df[,"Neighborhood"] <- factor(century_df[,"Neighborhood"])
+
+# Parallel lines model
+parallel_fit <- lm(SalePrice~GrLivArea+
+                     relevel(Neighborhood, ref="NAmes"), # Add indicator variables (intercept adjustment terms).
+                   data=century_df)
+
+summary(parallel_fit)
+```
+
+
+#Model 3: Separate Lines Model
+```{r}
+
+separate_fits <- lm(SalePrice~GrLivArea+
+                      relevel(Neighborhood, ref="NAmes")+             # Add intercept adjustment terms
+                      relevel(Neighborhood, ref="NAmes"):GrLivArea,   # Add interaction terms (slope adjustments)
+                    data=century_df)
+
+summary(separate_fits)
 ```
 
 
