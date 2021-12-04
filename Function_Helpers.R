@@ -6,6 +6,7 @@ library(utilities)
 library(HH)
 library(patchwork)
 library(EnvStats)
+library(olsrr)
 
 #################################### PLOT LABELING #######################################
 
@@ -135,7 +136,7 @@ get_plot_labels <- function(plot_kind, plot_type_info, extra_info=NULL){
 ##################################################################################################
 
 # Calculate all the case statistics to assess model fit.
-create_case_df <- function(fit){
+create_case_df <- function(fit, dataframe=NULL){
   
   case_stats <- case(fit)
   case_df <- as.data.frame(case_stats)
@@ -147,7 +148,17 @@ create_case_df <- function(fit){
   case_df[,"fitted_values"] <- fit$fitted.values
   
   # Add a column to track observation number
-  case_df[,"obs_number"] <- seq(1, as.numeric(nrow(case_df)))
+  
+  if(!is.null(dataframe) & ("Id" %in% names(dataframe))){
+    
+    case_df[,"obs_number"] <- dataframe[,"Id"]
+    
+  }else{
+    
+    case_df[,"obs_number"] <- seq(1, as.numeric(nrow(case_df)))  
+  }
+  
+  
   
   return(case_df)
   
@@ -160,11 +171,11 @@ create_case_df <- function(fit){
 # 1. Calculates all case statistics and stores in a dataframe
 # 2. Copies the data for the residual type being plotted to a column named "Resid_Plot_Column"
 # 3. Filters the dataframe based on the "remove_less"than" and "remove_greater_than" filters.
-get_residual_plot_data <- function(fit, residual_type, remove_less_than, remove_greater_than){
+get_residual_plot_data <- function(fit, residual_type, remove_less_than, remove_greater_than, dataframe=NULL){
   
   
   # Create the case statistics dataframe
-  case_df <- create_case_df(fit)
+  case_df <- create_case_df(fit, dataframe=dataframe)
   
   # Add the appropriate Resid_Plot_Column for this residual_type
   case_df <- set_resid_plot_column(case_df, residual_type=residual_type)
@@ -248,7 +259,14 @@ check_datatypes <- function(df, analysis_var){
 
 
 add_obs_number_column <- function(df){
-  df[,"obs_number"] <- seq(1, as.numeric(nrow(df)))
+  
+  # If the dataframe already has an "Id" column for observation identifiers,
+  # then use that, otherwise create 1 by number the rows of the dataframe.
+  if("Id" %in% names(df)){
+    df[,"obs_number"] <- df[,"Id"]
+  }else{
+    df[,"obs_number"] <- seq(1, as.numeric(nrow(df))) 
+  }
   return(df)
 }
 
@@ -1341,6 +1359,11 @@ add_regression_and_title <- function(df, show_regression, p, conf_level, pred_ba
 
 ############################## SEPARATE/PARALLEL LINES MODEL SECTION  ############################### 
 
+get_ggplot_colors <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  return(hcl(h = hues, l = 65, c = 100)[1:n])
+}
+
 
 get_adjustment_terms <- function(coefficients, explanatory_continuous, explantory_grouping){
   
@@ -1382,8 +1405,32 @@ get_adjustment_terms <- function(coefficients, explanatory_continuous, explantor
   return(terms)
 }
 
+add_group_means <- function(p, df, explanatory_continuous, explantory_grouping, response, 
+                            plot_group_means, mean_shape, mean_size){
+  
+  if(!plot_group_means){
+    return(p)
+  }
+  
+  df[,"group_var"] <- df[,explantory_grouping]
+  df[,"x_variable"] <- df[,explanatory_continuous]
+  df[,"y_variable"] <- df[,response]
+  
+  group_mean_df <- df %>% 
+    group_by(group_var=group_var) %>%
+    summarize(mean_x=mean(x_variable),
+              mean_y=mean(y_variable))
+  
+  group_mean_df <- as.data.frame(group_mean_df)
+  
+  p <- p + geom_point(data=group_mean_df, shape=mean_shape, size=mean_size, 
+                      mapping=aes(x=mean_x, y=mean_y, color=group_var))
+  
+  return(p)
+}
 
-plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, explantory_grouping){
+plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, explantory_grouping, response,
+                               plot_group_means, df, mean_shape, mean_size){
   
   # Get the coefficients for the MLR model
   coefficients <- fit$coefficients
@@ -1398,6 +1445,7 @@ plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, expla
   base_intercept_value <- coefficients[[model_term_names$base_intercept]]
   base_slope_value <- coefficients[[model_term_names$base_slope]]
   
+  line_colors <- get_ggplot_colors(n=num_lines)
   
   for(line_num in 1:num_lines){
     
@@ -1416,13 +1464,24 @@ plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, expla
       }
     }
     
+    line_color <- line_colors[[line_num]]
+    
     p <- p + 
       geom_abline(slope=slope_term,
                   intercept=intercept_term,
                   linetype="solid",
-                  color="red", show.legend=TRUE)
+                  color=line_color, 
+                  show.legend=TRUE)
     
   }
+  
+  # If we want to add a special marker to show that the regression line for each group always
+  # goes through the mean (for the separate lines model at least).
+  p <- add_group_means(p=p, df=df, explanatory_continuous=explanatory_continuous,
+                       explantory_grouping=explantory_grouping, response=response, 
+                       plot_group_means=plot_group_means, mean_shape=mean_shape, 
+                       mean_size=mean_size)
+
   
   return(p)
 }

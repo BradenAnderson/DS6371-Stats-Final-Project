@@ -20,7 +20,7 @@ source("./Function_Helpers.R")
 # FUNCTION TO PLOT RESIDUALS VS FITTED VALUES
 # valid residual_types: "externally_studentized", "internally_studentized", "regular", "deleted" (PRESS)
 #                 
-plot_residuals <- function(fit, residual_type="externally_studentized", plot_zero_hline=TRUE,
+plot_residuals <- function(fit, dataframe=NULL, residual_type="externally_studentized", plot_zero_hline=TRUE,
                            zero_hline_linetype="solid", zero_hline_color="red", remove_less_than=NULL,
                            remove_greater_than=NULL, flag_extreme_values=TRUE, extreme_thresh_std=3.5,
                            extreme_thresh_regular=3, id_extreme_values=FALSE, extreme_value_color="red",
@@ -29,6 +29,7 @@ plot_residuals <- function(fit, residual_type="externally_studentized", plot_zer
 
   
   case_df <- get_residual_plot_data(fit=fit, 
+                                    dataframe=dataframe,
                                     residual_type=residual_type, 
                                     remove_less_than=remove_less_than, 
                                     remove_greater_than=remove_greater_than)
@@ -77,12 +78,13 @@ plot_residuals <- function(fit, residual_type="externally_studentized", plot_zer
 
 #################################### RESIDUAL HISTOGRAM SECTION #######################################
 
-plot_residual_histogram <- function(fit, residual_type="externally_studentized", binwidth=NULL, num_bins=NULL,
+plot_residual_histogram <- function(fit, dataframe=NULL, residual_type="externally_studentized", binwidth=NULL, num_bins=NULL,
                                     remove_less_than=NULL, remove_greater_than=NULL, fill_color="Pink", 
                                     outline_color="Navy", overlay_normal=TRUE, normal_linetype="solid", 
                                     normal_linecolor="black", normal_linesize=0.5){
   
   case_df <- get_residual_plot_data(fit=fit, 
+                                    dataframe=dataframe,
                                     residual_type=residual_type, 
                                     remove_less_than=remove_less_than, 
                                     remove_greater_than=remove_greater_than)
@@ -223,7 +225,7 @@ plot_partial_residuals <- function(df, analysis_var, response_var="SalePrice", e
 #       rotm abbreviates "rule of thumb multiplier" indicates the value is a multiplier in an equation
 #       that creates the rule of thumb.
 #
-plot_case_stat_vs_obs <- function(fit, case_stat="cook", remove_less_than=NULL, remove_greater_than=NULL, 
+plot_case_stat_vs_obs <- function(fit, dataframe=NULL, case_stat="cook", remove_less_than=NULL, remove_greater_than=NULL, 
                                   cook_rot=1, dffit_rotm=2, leverage_rotm=3, resid_rot=3, std_rotm=0.05,
                                   ref_linecolor="red", ref_linetype="dashed", annot_reflines=TRUE, 
                                   plot_rot_reflines=TRUE, alpha=0.3, flag_extreme=TRUE, max_flagged=5, 
@@ -233,6 +235,7 @@ plot_case_stat_vs_obs <- function(fit, case_stat="cook", remove_less_than=NULL, 
   case_stat_short_name <- case_stat_name_map(case_stat, get_short_name=TRUE)
   
   case_df <- get_residual_plot_data(fit=fit, 
+                                    dataframe=dataframe,
                                     residual_type=case_stat_short_name, 
                                     remove_less_than=remove_less_than, 
                                     remove_greater_than=remove_greater_than)
@@ -265,7 +268,7 @@ plot_case_stat_vs_obs <- function(fit, case_stat="cook", remove_less_than=NULL, 
 
 #################################### RESIDUAL VS LEVERAGE SECTION #######################################
 
-plot_residual_vs_leverage <- function(fit, residual_type="externally_studentized", remove_less_than=NULL, 
+plot_residual_vs_leverage <- function(fit, dataframe=NULL, residual_type="externally_studentized", remove_less_than=NULL, 
                                       remove_greater_than=NULL, add_reference_lines=TRUE, 
                                       leverage_line_multiplier=3, resid_line_threshold=2, reference_linetype="dashed",
                                       reference_linecolor="red", annotate_thresholds=TRUE, flag_extreme_obs=TRUE,
@@ -273,6 +276,7 @@ plot_residual_vs_leverage <- function(fit, residual_type="externally_studentized
                                       show_extreme_obs_numbers=TRUE, obs_txt_size=3, obs_txt_vjust=-0.4, obs_txt_hjust=0) {
   
   case_df <- get_residual_plot_data(fit=fit, 
+                                    dataframe=dataframe,
                                     residual_type=residual_type, 
                                     remove_less_than=remove_less_than, 
                                     remove_greater_than=remove_greater_than)
@@ -311,7 +315,7 @@ plot_residual_vs_leverage <- function(fit, residual_type="externally_studentized
 #                                     2) "0-1" (intercept zero, slope 1), 3) "least squares"
 #
 #
-plot_residual_qq <- function(fit, residual_type="externally_studentized", distribution="norm", param_list=list(mean=0, sd=1), 
+plot_residual_qq <- function(fit, dataframe=NULL, residual_type="externally_studentized", distribution="norm", param_list=list(mean=0, sd=1), 
                              estimate_params=FALSE, plot_type="Q-Q", add_line=TRUE, qq_linetype="robust", 
                              duplicate_points_method="standard", points_color="#003f5c", line_color="#ffa600", 
                              linetype="solid", round_digits=5, flag_largest_resid=TRUE, flag_nlargest=3, remove_less_than=NULL, 
@@ -320,6 +324,7 @@ plot_residual_qq <- function(fit, residual_type="externally_studentized", distri
   
   
   case_df <- get_residual_plot_data(fit=fit, 
+                                    dataframe=dataframe,
                                     residual_type=residual_type, 
                                     remove_less_than=remove_less_than, 
                                     remove_greater_than=remove_greater_than)
@@ -432,15 +437,21 @@ plot_scatter <- function(data, x_var, y_var, shade_var=NULL, shape_var=NULL,
 
 
 plot_slr_via_mlr <- function(fit, df, explanatory_continuous="GrLivArea", explantory_grouping="Neighborhood",
-                             response="SalePrice", model_type="separate_lines"){
+                             response="SalePrice", model_type="separate_lines", plot_group_means=FALSE, alpha=0.9,
+                             mean_shape=17, mean_size=3, identify_obs=FALSE, obs_txt_color="red", obs_txt_size=3,
+                             obs_txt_vjust=-0.4, obs_txt_hjust=0){
   
-  
-  
-  
-  p <- plot_scatter(data=df, x_var=explanatory_continuous, y_var=response, shade_var=explantory_grouping)
+
+  p <- plot_scatter(data=df, x_var=explanatory_continuous, y_var=response, shade_var=explantory_grouping, alpha=alpha,
+                    identify_obs=identify_obs, obs_txt_color=obs_txt_color, obs_txt_size=obs_txt_size, 
+                    obs_txt_vjust=obs_txt_vjust, obs_txt_hjust=obs_txt_hjust)
   
   p <- plot_all_mlr_lines(p=p, fit=fit, model_type=model_type, explantory_grouping=explantory_grouping,
-                          explanatory_continuous=explanatory_continuous)
+                          explanatory_continuous=explanatory_continuous, response=response, 
+                          plot_group_means=plot_group_means, df=df, mean_shape=mean_shape, mean_size=mean_size)
+  
+  
+  
   
   if(model_type == "separate_lines"){
     model_title <- "Separate Lines"
