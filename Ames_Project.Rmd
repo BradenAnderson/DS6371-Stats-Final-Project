@@ -28,6 +28,7 @@ df <- within(df, Neighborhood <- relevel(Neighborhood, ref="NAmes"))
 
 ```
 
+
 ```{r}
 
 # Filter dataframe such that it only includes rows where the neighborhood column
@@ -63,7 +64,7 @@ levels(century_df[,"Neighborhood"])
 #                             is different depending on which neighborhood the house is in.
 #
 #
-# Statistical slueth page 250: When to Include Interaction Terms
+# Statistical sleuth page 250: When to Include Interaction Terms
 # 1) When a question of interest pertains to interaction (meadowfoam study).
 # 2) When good reason exists to suspect interaction.
 # 3) When interactions are proposed as a more general model for the purpose of examining
@@ -606,14 +607,45 @@ partial_f_log_obsrm
 # LOG OF SALE PRICE AND OBSERVATIONS 524 AND 1299 REMOVED
 ```
 
+# PART 2:
+```{r}
+
+
+## Project Part 2, TODO: 
+# 1) Model produced using backwards selection
+# 2) Model produced using forward selection
+# 3) Model produced using step wise selection
+# 4) Model produced using a custom method
+# 5) Plots for assumption assessment and influential point investigations for each of the 4 models above.
+# 6) Adjusted RSquare, CV PRESS and Kaggle Scores for the 4 models mentioned above. 
+
+
+```
 
 ```{r}
+
+plot_residuals(separate_fits, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE, extreme_thresh_std = 2.5)
 
 
 ```
 
 
+
 ```{r}
+
+plot_residuals(separate_fits_log, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE, extreme_thresh_std = 2.5)
 
 
 ```

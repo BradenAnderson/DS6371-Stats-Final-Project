@@ -7,6 +7,7 @@ library(HH)
 library(patchwork)
 library(EnvStats)
 library(olsrr)
+library(sjmisc)
 
 #################################### PLOT LABELING #######################################
 
@@ -1489,3 +1490,598 @@ plot_all_mlr_lines <- function(p, fit, model_type, explanatory_continuous, expla
 ############################## END SEPARATE/PARALLEL LINES MODEL SECTION  #############################
 
 
+
+#################################### Data Cleaning #################################### 
+
+ord_var_analyzer <- function(variable, ordering=NULL){
+  
+  train_df <- read.csv("./train.csv")
+  test_df <- read.csv("./test.csv")
+  
+  train_df <- handle_categoricals_with_NA_level(train_df)
+  test_df <- handle_categoricals_with_NA_level(test_df)
+  
+  # CREATE UNORDERED FACTORS SO WE CAN CHECK WHAT LEVELS EXIST
+  train_df[,variable] <- factor(train_df[,variable])
+  test_df[,variable] <- factor(test_df[,variable])
+  
+  # TRAIN SET CHECKS
+  train_set_unique <- unique(train_df[,variable])
+  train_set_counts <- table(train_df[,variable])
+  num_missing_train <- sum(is.na(train_df[,variable]))
+  
+  # TEST SET CHECKS
+  test_set_unique <- unique(test_df[,variable])
+  test_set_counts <- table(test_df[,variable])
+  num_missing_test <- sum(is.na(test_df[,variable]))
+  
+  print(paste0("====================== TRAIN REPORT FOR ", variable, " ======================"))
+  print("UNIQUE LEVELS: ")
+  cat("\n")
+  print(train_set_unique)
+  cat("\n****************************************\n\n")
+  print("LEVEL COUNTS: ")
+  print(train_set_counts)
+  cat("\n****************************************\n\n")
+  print(paste0("NUMBER OF MISSINGS -->  ", num_missing_train))
+  print("======================================================================")
+  cat("\n")
+  cat("\n")
+  
+  print(paste0("====================== TEST REPORT FOR ", variable, " ======================"))
+  print("UNIQUE LEVELS: ")
+  cat("\n")
+  print(test_set_unique)
+  cat("\n****************************************\n\n")
+  print("LEVEL COUNTS: ")
+  print(test_set_counts)
+  cat("\n****************************************\n\n")
+  print(paste0("NUMBER OF MISSINGS -->  ", num_missing_test))
+  print("======================================================================")
+  cat("\n")
+  cat("\n")
+  
+  if(!is.null(ordering)){
+    # CREATE UNORDERED FACTORS SO WE CAN CHECK WHAT LEVELS EXIST
+    train_df[,variable] <- factor(train_df[,variable], 
+                                  levels=ordering, 
+                                  order=TRUE)
+    test_df[,variable] <- factor(test_df[,variable],
+                                 levels=ordering,
+                                 order=TRUE)
+    
+    train_ordering <- train_df[,variable][1]
+    train_ordered_counts <- table(train_df[,variable])
+    
+    test_ordering <- test_df[,variable][1]
+    test_ordered_counts <- table(test_df[,variable])
+    
+    print(paste0("====================== *AFTER ORDERING* REPORT FOR ", variable, " ======================"))
+    print("TRAIN LEVEL ORDERING: ")
+    cat("\n")
+    print(train_ordering)
+    cat("\n****************************************\n\n")
+    print("TRAIN COUNTS: ")
+    cat("\n")
+    print(train_ordered_counts)
+    cat("\n****************************************\n\n")
+    print("TEST LEVEL ORDERING: ")
+    cat("\n")
+    print(test_ordering)
+    cat("\n****************************************\n\n")
+    print("TEST COUNTS: ")
+    cat("\n")
+    print(test_ordered_counts)
+    cat("\n****************************************\n\n")
+    print("======================================================================")
+    cat("\n")
+    cat("\n")
+    
+  }
+}
+
+handle_categoricals_with_NA_level <- function(df){
+  
+  cols_with_legit_na <- c("MiscFeature", "Fence", "PoolQC", "GarageCond", "GarageQual", "GarageFinish", "GarageType", 
+                          "FireplaceQu", "BsmtFinType2", "BsmtFinType1", "BsmtExposure", "BsmtCond", "BsmtQual", "Alley")
+  
+  for(index in 1:length(cols_with_legit_na)){
+    
+    column_name <- cols_with_legit_na[[index]]
+    
+    # Fill in the NA with "no_feature" because this value isn't missing, it is an actual level of 
+    # the categorical variable that indicates the feature is not present in that house.
+    df[is.na(df[,column_name]), column_name] <- "no_feature"
+    
+  }
+  
+  return(df)
+  
+}
+
+print_missing_values_ames <- function(df){
+  
+  df <- handle_categoricals_with_NA_level(df)
+  
+  return(sapply(df, function(x) sum(is.na(x))))
+  
+}
+
+print_missings_post_cleaning_ames <- function(df){
+  
+  return(sapply(df, function(x) sum(is.na(x))))
+}
+
+remove_heavily_imbalanced_factors <- function(dataframe, training_data, save_path, 
+                                              imbalance_threshold, num_rows=1460){
+  
+  column_names <- names(dataframe)
+  
+  max_allowed_imbalance <- imbalance_threshold * num_rows
+  
+  imbalanced_columns = c()
+  
+  if(training_data){
+    
+    for(column_index in 1:length(column_names)){
+      
+      col_name <- column_names[[column_index]]
+      
+      # If this is a factor column, check if it is imbalanced
+      if(class(dataframe[,col_name]) == "factor"){
+        
+        # If this factor is imbalanced beyond the allowed threshold
+        if(max(table(dataframe[,col_name])) > max_allowed_imbalance){
+          
+          # Update the list of imbalanced columns, so they can be removed from
+          # the test set as well.
+          imbalanced_columns <- append(imbalanced_columns, col_name)
+          
+        }
+      }
+    }
+    
+    # Remove the imbalanced columns from the training set
+    dataframe <- dataframe[, !(names(dataframe) %in% imbalanced_columns)]
+    
+    # Save the columns removed, so they can be removed from the test set too
+    imbalanced_factor_df <- data.frame(imbalanced_factors=imbalanced_columns)
+    write.csv(imbalanced_factor_df, save_path)
+    
+    #return_list <- list(dataframe=dataframe,
+    #                    columns_removed=imbalanced_columns)
+    
+  }else{ # ELSE, WE ARE PROCESSING THE TEST SET
+    
+    # Read in the dataframe containing the imbalanced columns to remove
+    imb_categorical_df <- read.csv(save_path)
+    imb_col_names <- imb_categorical_df[,"imbalanced_factors"]
+    
+    # Remove the imbalanced columns from the test set
+    dataframe <- dataframe[,!(names(dataframe) %in% imb_col_names)]
+    
+    #return_list <- list(dataframe=dataframe,
+    #                  columns_removed=imb_col_names)
+    
+  }
+  
+  return(dataframe)
+  
+}
+
+
+add_custom_columns <- function(df){
+  
+  # Create a total indoor square footage feature
+  df[,"TotalIndoorSF"] <- df[,"X1stFlrSF"] + df[,"X2ndFlrSF"] + df[,"TotalBsmtSF"]
+  
+  # Remove the three columns used to create the new feature above
+  # GrLivArea is simply "X1stFlrSF" + "X2ndFlrSF", making it also now redundant.
+  df <- df[,!(names(df) %in% c("X1stFlrSF", "X2ndFlrSF", "TotalBsmtSF", "GrLivArea"))]
+  
+  return(df)
+  
+}
+
+
+impute_missing_values_ames <- function(df, train_data, save_path){
+  
+  cols_with_missings_train_or_test <- c("MSZoning", "LotFrontage", "Utilities", "Exterior1st", "Exterior2nd", "MasVnrType",
+                                        "MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF", "BsmtFullBath", 
+                                        "BsmtHalfBath", "KitchenQual", "Functional", "GarageCars", "GarageArea",
+                                        "SaleType", "Electrical")
+  
+  
+  impute_with_most_frequent <- c("MSZoning", "Utilities", "MasVnrType", "KitchenQual", "Functional", "SaleType", "Electrical",
+                                 "Exterior1st", "Exterior2nd")
+  
+  impute_with_mean <- c("LotFrontage", "MasVnrArea", "BsmtFinSF1", "BsmtFinSF2", "BsmtUnfSF", "TotalBsmtSF", 
+                        "BsmtFullBath", "BsmtHalfBath", "GarageCars", "GarageArea")
+  
+  
+  
+  # IMPUTE MISSING VALUES IN GARAGEYRBUILT WITH THE YEAR THE HOME WAS BUILT
+  df[is.na(df[,"GarageYrBlt"]),"GarageYrBlt"] <- df[is.na(df[,"GarageYrBlt"]),"YearBuilt"]
+  
+  if(train_data){
+    
+    # STRANGE SPELLING MISTAKES IN THE EXTERIOR COLUMNS
+    df[df[,"Exterior2nd"] == "Wd Shng", "Exterior2nd"] <- "WdShing"
+    df[df[,"Exterior2nd"] == "Brk Cmn", "Exterior2nd"] <- "BrkComm"
+    df[df[,"Exterior2nd"] == "CmentBd", "Exterior2nd"] <- "CemntBd"
+    df[df[,"Exterior2nd"] == "CBlock", "Exterior2nd"] <- "Other"
+    df[df[,"Exterior1st"] == "CBlock", "Exterior1st"] <- "Other"
+    df[df[,"Exterior1st"] == "AsphShn", "Exterior1st"] <- "Other"
+    df[df[,"Exterior2nd"] == "AsphShn", "Exterior2nd"] <- "Other"
+    
+    
+    # MODE IMPUTATIONS
+    for(mode_index in 1:length(impute_with_most_frequent)){
+      
+      feat_name <- impute_with_most_frequent[[mode_index]]
+      
+      most_frequent <- tail(names(sort(table(df[!is.na(df[,feat_name]),feat_name]))),1)
+      
+      
+      if(mode_index == 1){
+        test_imputation_df <- data.frame(MSZoning=most_frequent)
+      }
+      else{
+        test_imputation_df[,feat_name] <- most_frequent
+      }
+      
+      
+      # IMPUTE MISSINGS WITH THE MOST FREQUENT VALUE
+      df[is.na(df[,feat_name]),feat_name] <- most_frequent
+      
+    }
+    
+    # MEAN IMPUTATIONS
+    for(mean_index in 1:length(impute_with_mean)){
+      
+      feat_name <- impute_with_mean[[mean_index]]
+      
+      # TAKE THE MEAN VALUE OF THAT COLUMN, USING ALL ROWS WHERE THE VALUE IS NOT MISSING.
+      feature_mean <- mean(df[!is.na(df[,feat_name]),feat_name])
+      
+      test_imputation_df[,feat_name] <- feature_mean
+      
+      # IMPUTE MISSINGS WITH THE AVERAGE VALUE IN THAT COLUMN
+      df[is.na(df[,feat_name]),feat_name] <- feature_mean
+      
+    }
+    
+    write.csv(test_imputation_df, save_path) 
+    
+  }else{
+    
+    impute_df <- read.csv(save_path)
+    
+    for(impute_index in 1:length(cols_with_missings_train_or_test)){
+      
+      feat_name <- cols_with_missings_train_or_test[[impute_index]]
+      
+      # IMPUTE WITH THE SAME VALUE WE IMPUTED WITH DURING TRAINING
+      df[is.na(df[,feat_name]),feat_name] <- impute_df[,feat_name]
+    }
+    
+    
+    # STRANGE SPELLING MISTAKES IN THE EXTERIOR COLUMNS, and some categories
+    # with just way to few entries (causing big problems fitting the coefficients).
+    df[df[,"Exterior2nd"] == "Wd Shng", "Exterior2nd"] <- "WdShing"
+    df[df[,"Exterior2nd"] == "Brk Cmn", "Exterior2nd"] <- "BrkComm"
+    df[df[,"Exterior2nd"] == "CmentBd", "Exterior2nd"] <- "CemntBd"
+    df[df[,"Exterior2nd"] == "CBlock", "Exterior2nd"] <- "Other"
+    df[df[,"Exterior1st"] == "CBlock", "Exterior1st"] <- "Other"
+    df[df[,"Exterior1st"] == "AsphShn", "Exterior1st"] <- "Other"
+    df[df[,"Exterior2nd"] == "AsphShn", "Exterior2nd"] <- "Other"
+     
+  }
+  
+  return(df)
+  
+}
+
+
+get_nominal_feature_map <- function(){
+  
+  nominal_references <- list("MSSubClass"=c("20", "30", "40", "45", "50", "60", "70", "75", "80", "85", "90",
+                                            "120", "150", "160", "180", "190"),
+                             "MSZoning"=c("RM","RL", "RH", "FV", "C (all)"),
+                             "Street"=c("Grvl", "Pave"),
+                             "Alley"=c("no_feature", "Grvl", "Pave"),
+                             "LandContour"= c("Lvl", "Low", "Bnk", "HLS"),
+                             "LotConfig"=c("CulDSac", "Corner", "Inside", "FR2", "FR3"),
+                             "Neighborhood"=c("NAmes", "Blmngtn", "Blueste", "BrDale", "BrkSide", "ClearCr",
+                                              "CollgCr", "Crawfor", "Edwards", "Gilbert", "IDOTRR", "MeadowV",
+                                              "Mitchel", "NoRidge", "NPkVill", "NridgHt", "NWAmes", "OldTown",
+                                              "Sawyer", "SawyerW", "Somerst", "StoneBr", "SWISU", "Timber", "Veenker"),
+                             "Condition1"=c("Norm", "Artery", "Feedr", "PosA", "PosN", "RRAe", "RRAn", "RRNe",
+                                            "RRNn"),
+                             "Condition2"=c("Norm", "Artery", "Feedr", "PosA", "PosN", 
+                                            "RRAe", "RRAn","RRNn"),
+                             "BldgType"=c("1Fam", "2fmCon", "Duplex", "Twnhs", "TwnhsE"),
+                             "HouseStyle"=c("1Story", "1.5Fin", "1.5Unf", "2.5Fin", "2.5Unf",
+                                            "2Story", "SFoyer", "SLvl"),
+                             "RoofStyle"=c("Flat", "Gable", "Gambrel", "Hip", "Mansard", "Shed"),
+                             "RoofMatl"=c("ClyTile", "CompShg", "Membran", "Metal", 
+                                          "Roll", "Tar&Grv", "WdShake", "WdShngl"),
+                             "Exterior1st"=c("WdShing", "Wd Sdng", "VinylSd", "Stucco", "Stone", "Plywood", 
+                                             "Other", "MetalSd", "ImStucc", "HdBoard", "CemntBd", "BrkFace", 
+                                             "BrkComm", "AsbShng"),
+                             "Exterior2nd"=c("WdShing", "Wd Sdng", "VinylSd", "Stucco", "Stone", "Plywood", 
+                                             "Other","MetalSd", "ImStucc", "HdBoard", "CemntBd", "BrkFace", 
+                                             "BrkComm", "AsbShng"),
+                             "MasVnrType"=c("None", "BrkFace", "Stone", "BrkCmn"),
+                             "Foundation"=c("Slab", "Stone", "Wood", "PConc", "CBlock", "BrkTil"),
+                             "Heating"=c("Floor", "GasA", "GasW", "Grav", "OthW", "Wall"),
+                             "CentralAir"=c("Y", "N"),
+                             "GarageType"=c("no_feature", "2Types", "Attchd", "Basment", 
+                                            "BuiltIn", "CarPort", "Detchd"),
+                             "MiscFeature"=c("no_feature", "Gar2", "Othr", "Shed", "TenC"),
+                             "SaleType"=c("New", "COD", "Con", "ConLD", "ConLI", 
+                                          "ConLw", "CWD", "Oth", "WD"),
+                             "SaleCondition"=c("Normal", "Partial", "Abnorml", 
+                                               "AdjLand", "Alloca", "Family"))
+  
+  return(nominal_references)
+  
+}
+
+
+get_ordinal_conversion_list <- function(){
+  
+  conversion_list <- list("LotShape"=c("IR3", "IR2", "IR1", "Reg"),
+                          "Utilities"=c("ELO", "NoSeWa", "NoSewr", "AllPub"),
+                          "LandSlope"=c("Gtl", "Mod", "Sev"),
+                          "OverallCond"=c("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+                          "ExterQual"=c("Fa", "TA", "Gd", "Ex"),
+                          "ExterCond"=c("Po", "Fa", "TA", "Gd", "Ex"),
+                          "BsmtQual"=c("no_feature", "Fa", "TA", "Gd", "Ex"),
+                          "BsmtCond"=c("no_feature", "Po", "Fa", "TA", "Gd", "Ex"),
+                          "BsmtExposure"=c("no_feature", "No", "Mn", "Av", "Gd"),
+                          "BsmtFinType1"=c("no_feature", "Unf", "LwQ", "Rec", "BLQ", "ALQ", "GLQ"),
+                          "BsmtFinType2"=c("no_feature", "Unf", "LwQ", "Rec", "BLQ", "ALQ", "GLQ"),
+                          "HeatingQC"=c("Po", "Fa", "TA", "Gd", "Ex"),
+                          "Electrical"=c("Mix", "FuseP", "FuseF", "FuseA", "SBrkr"),
+                          "KitchenQual"=c("Po", "Fa", "TA", "Gd", "Ex"),
+                          "Functional"=c("Sal", "Sev", "Maj2", "Maj1", "Mod", "Min2", "Min1", "Typ"),
+                          "FireplaceQu"=c("no_feature", "Po", "Fa", "TA", "Gd", "Ex"),
+                          "GarageFinish"=c("no_feature", "Unf", "RFn", "Fin"),
+                          "GarageQual"=c("no_feature", "Po", "Fa", "TA", "Gd", "Ex"),
+                          "GarageCond"=c("no_feature", "Po", "Fa", "TA", "Gd", "Ex"),
+                          "PavedDrive"=c("N", "P", "Y"),
+                          "PoolQC"=c("no_feature", "Fa", "TA", "Gd", "Ex"),
+                          "Fence"=c("no_feature", "MnWw", "GdWo", "MnPrv", "GdPrv"))
+  
+  return(conversion_list)
+  
+}
+
+
+convert_ordinals_to_integers <- function(df, conv_list, feature_names, name_suffx){
+  
+  for(index in 1:length(feature_names)){
+    
+    # Grab the name of the feature at this index
+    feature_name <- feature_names[[index]]
+    
+    # Use the feature name to grab the ordinal values
+    ordinal_values <- conv_list[[feature_name]]
+    
+    # Unique values actually present in the dataset for this ordinal feature
+    unique_values_present <- unique(df[,feature_name])
+    
+    # Mask of TRUE and FALSES depending on if an ordinal level is actually present in the dataset
+    values_contained_mask <- (ordinal_values %in% unique_values_present)
+    
+    
+    # Create a numeric value for all possible levels, even the ones that aren't present.
+    numeric_values <- seq(from=1, 
+                          to=length(ordinal_values),
+                          by=1)
+    
+    # Remove any numeric values associated with potential values of the ordinal variable that 
+    # do not actually show up in this dataset
+    numeric_values_present <- numeric_values[values_contained_mask]
+    
+    # Remove the ordinal levels associated with values not actually present in the dataset
+    ordinal_levels_present <- ordinal_values[values_contained_mask]
+    
+    # Create a new feature name by appending a suffix if desired (default is to 
+    # leave the name the same).
+    new_feature_name <- paste0(feature_name, name_suffx)
+    
+    df[,new_feature_name] <- plyr::mapvalues(df[,feature_name],
+                                             from=ordinal_levels_present,
+                                             to=numeric_values_present)
+    
+    df[,new_feature_name] <- as.integer(df[,new_feature_name])
+    
+  }
+  
+  return(df)
+  
+}
+
+convert_ordinals_to_factors <- function(df, conv_list, feature_names, order_factors,
+                                        name_suffx){
+  
+  # Iterate over the list of feature names
+  for(index in 1:length(feature_names)){
+    
+    # Grab the name of the feature at this index
+    feature_name <- feature_names[[index]]
+    
+    # Use the feature name to grab the ordinal values
+    ordinal_values <- conv_list[[feature_name]]
+    
+    # Create a new feature name by appending a suffix if desired (default is to 
+    # leave the name the same).
+    new_feature_name <- paste0(feature_name, name_suffx)
+    
+    
+    # CONVERT THE FEATURE EITHER TO AN ORDINAL OR NON-ORDERED FACTOR.
+    df[,new_feature_name] <-  factor(x=df[,feature_name], 
+                                     levels = ordinal_values, 
+                                     order = order_factors)
+    
+  }
+  
+  return(df)
+  
+}
+
+
+clean_ordinal_values <- function(df, ordinal_as_factor, order_ordinal_factors, 
+                                 ordinal_as_integer, feature_name_suffix){
+  
+  
+  # A list mapping column names for ordinal features to their categories (in the proper order, which is 
+  # necessary if ordered factors are ever to be used).
+  conv_list <- get_ordinal_conversion_list()
+  
+  # Get a list of the names of the ordinal features
+  feature_names <- names(conv_list)
+  
+  if(ordinal_as_factor){
+    
+    df <- convert_ordinals_to_factors(df=df, 
+                                      conv_list=conv_list,
+                                      feature_names=feature_names,
+                                      order_factors=order_ordinal_factors,
+                                      name_suffx=feature_name_suffix)
+    
+  }else if(ordinal_as_integer){
+    
+    df <- convert_ordinals_to_integers(df=df,
+                                       conv_list=conv_list,
+                                       feature_names=feature_names,
+                                       name_suffx=feature_name_suffix)
+    
+  }
+  
+  return(df)
+  
+}
+
+clean_nominal_features <- function(df){
+  
+  nominal_features <- get_nominal_feature_map()
+  
+  nominal_feature_names <- names(nominal_features)
+  
+  
+  df <- convert_ordinals_to_factors(df=df, 
+                                    conv_list=nominal_features,
+                                    feature_names=nominal_feature_names,
+                                    order_factors=FALSE,
+                                    name_suffx="")
+  
+  return(df)
+  
+}
+
+#################################### END Data Cleaning #################################### 
+
+
+
+#################################### FEATURE SELECTION SECTION ####################################
+
+prepare_model_dataset <- function(df, target, extra_exclusions){
+  
+  non_predictor_columns <- c("SalePrice", "Log_SalePrice", "Id")
+  
+  non_predictor_columns <- append(non_predictor_columns, extra_exclusions)
+  
+  # Create a list of potential predictors, by removing the target and any other features we
+  # wish to manually exclude
+  potential_predictors <- names(df)[!(names(df) %in% non_predictor_columns)]
+  
+  # Create a dataframe containing all potential predictors, and the desired target
+  model_df <- df[, (names(df) %in% potential_predictors)]
+  model_df[,"target"] <- df[,target]
+  
+  return(model_df)
+  
+}
+
+
+
+
+filter_inf_vif_columns <- function(df, target, training_data, save_path, vif_threshold){
+  
+  
+  if(training_data){
+    
+    # Dataframe to create the lm model with
+    model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
+    
+    # Fit the model and compute VIFs
+    fit <- lm(formula=target~., data=model_df, x=TRUE)
+    model_vifs <- vif(fit)
+    max_vif = max(model_vifs)
+    
+    # Get a vector of all predictor names that resulted in a lm
+    # coefficient that had infinite VIF
+    high_vif_columns <- c()
+    
+    loop_count <- 0
+    
+    while(max_vif >= vif_threshold){
+      
+      loop_count <- loop_count + 1
+      
+      # Get the names of all features that ended up with infinite VIF
+      high_vif_names <- names(model_vifs[model_vifs >= vif_threshold])
+      
+      # Get a vector of all predictor names
+      column_names <- names(model_df)
+      predictor_names <- column_names[column_names != target]
+      
+      for(col_index in 1:length(predictor_names)){
+        
+        column_name <- predictor_names[[col_index]]
+        
+        if(sjmisc::str_contains(x=high_vif_names, pattern=column_name)){
+          
+          high_vif_columns <- append(high_vif_columns, column_name)
+        }
+      }    
+      
+      df <- df[,!(names(df) %in% high_vif_columns)]  
+      model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
+      
+      # Fit the model and compute VIFs
+      fit <- lm(formula=target~., data=model_df, x=TRUE)
+      model_vifs <- vif(fit)
+      max_vif <- max(model_vifs)
+      
+      cat("\n\n")
+      print("******************************************************")
+      print(paste0("Finished Loop: ", loop_count))
+      cat("\n")
+      print("Max VIF: ")
+      print(max_vif)
+      print("Model VIFS:")
+      print(model_vifs)
+      cat("\n\n")
+      print("******************************************************")
+      cat("\n\n")
+    }
+    
+    
+    # Save the columns removed, so we can mimic this on test data.
+    vif_removal_df <- data.frame(high_vif_features=high_vif_columns)
+    write.csv(vif_removal_df, save_path)
+    
+  }else{ #else, this is the test data
+    
+    vif_df <- read.csv(save_path)
+    columns_to_remove <- vif_df[,"high_vif_features"]
+    df <- df[,!(names(df) %in% columns_to_remove)]
+  }
+
+  return(df)
+ 
+}

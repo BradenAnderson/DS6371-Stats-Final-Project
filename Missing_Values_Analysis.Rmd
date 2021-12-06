@@ -1,0 +1,351 @@
+---
+title: "data_cleaning"
+author: "Braden Anderson"
+date: "12/6/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r}
+source("./functions.R")
+
+df <- read.csv("./train.csv")
+
+clean_df <- clean_ames_data(df)
+
+head(clean_df)
+```
+
+
+```{r}
+
+# NUMBER OF MISSINGS IN THE TRAINING SET
+
+missings <- print_missings_post_cleaning_ames(clean_df)
+
+length(missings[(missings > 0)])
+
+```
+
+```{r}
+
+# NUMBER OF MISSINGS IN THE TEST SET
+t_df <- read.csv("./test.csv")
+
+t_clean_df <- clean_ames_data(t_df, training_data = FALSE)
+
+t_missings <- print_missings_post_cleaning_ames(t_clean_df)
+
+length(t_missings[(t_missings > 0)])
+
+```
+
+```{r}
+
+names(clean_df)
+
+```
+
+```{r}
+
+
+source("./functions.R")
+#library(sjmisc)
+
+model_df2 <- run_backward_selection(df=clean_df)
+
+fit <- lm(formula=target~., data=model_df2, x=TRUE)
+
+model_vifs <- vif(fit)
+
+backward_aic <- ols_step_backward_aic(model=fit,
+                                      progress=TRUE,
+                                      details=TRUE)
+
+backward_aic$predictors
+back_aic_press <- ols_press(model=backward_aic$model)
+back_aic_press
+```
+
+
+```{r}
+backward_aic$predictors
+backward_aic$steps
+backward_aic$arsq
+backward_aic$aics
+backward_aic$ess
+backward_aic$rss
+backward_press <- ols_press(backward_aic$model)
+backward_press
+
+summary(backward_aic$model)
+```
+
+
+```{r}
+
+
+source("./functions.R")
+#library(sjmisc)
+
+model_df <- run_backward_selection(df=clean_df)
+
+fit <- lm(formula=target~., data=model_df)
+
+model_vifs <- vif(fit)
+
+backward_aic <- ols_step_backward_aic(model=fit,
+                                      progress=TRUE,
+                                      details=TRUE)
+
+
+
+names(backward_aic)
+```
+
+
+```{r}
+backward_aic$predictors
+backward_aic$steps
+backward_aic$arsq
+backward_aic$aics
+backward_aic$ess
+backward_aic$rss
+backward_press <- ols_press(backward_aic$model)
+backward_press
+
+summary(backward_aic$model)
+```
+
+
+
+```{r}
+coefs <- fit$coefficients
+coefs[is.na(coefs)]
+
+
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+
+model_df <- run_backward_selection(df=clean_df)
+
+fit <- lm(formula=target~., data=model_df)
+
+model_vifs <- vif(fit)
+
+inf_vif_names <- names(model_vifs[model_vifs == Inf])
+
+
+```
+
+
+```{r}
+
+table(model_df[,"Exterior1st"])
+
+# Zero in a level
+table(model_df[,"BsmtQual"])
+table(model_df[,"BsmtFinType1"])
+table(model_df[,"GarageType"])
+table(model_df[,"GarageFinish"])
+
+1311/1460
+1120/1460
+1220/1460
+```
+
+
+```{r}
+table(model_df[,"Exterior2nd"])
+
+1256/1460
+```
+
+
+```{r}
+
+table(t_df[,"Exterior2nd"])
+table(t_df[,"Exterior1st"])
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```

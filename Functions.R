@@ -479,9 +479,86 @@ partial_f_test <- function(full_model, reduced_model){
   
 }
 
-
+# Add Hypothesis test for equal variance?
+#
 
 
 #################################### END HYPOTHESIS TEST SECTION  ####################################
+
+
+
+#################################### Data Cleaning #################################### 
+
+
+
+clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, target="SalePrice",
+                            order_ordinal_factors=FALSE, ordinal_as_integer=FALSE, ord_feature_name_suffix="", 
+                            imbalance_threshold=0.80, train_imputation_save_path="./imputations_for_test_data.csv",
+                            imbalanced_factor_save_path="./imbalanced_categoricals.csv",
+                            inf_vif_save_path="./infinite_vif_features.csv", vif_threshold=50){
+  
+  
+  garbage_features <- c("Utilities", "Id")
+  
+  # HANDLE THE CATEGORICAL VARIABLES THAT LOOK LIKE THEY HAVE MISSINGS BECAUSE THEY USE "NA" AS 
+  # A LEVEL NAME. THESE ARE NOT ACTUAL MISSING VALUES THOUGH.
+  df <- handle_categoricals_with_NA_level(df)
+  
+  # HANDLE THE LEGITMATE MISSING VALUES
+  df <- impute_missing_values_ames(df, 
+                                   train_data=training_data,
+                                   save_path=train_imputation_save_path)
+  
+  ########## ORDINAL CATEGORICAL FEATURES SECTION ########## 
+  df <- clean_ordinal_values(df=df,
+                             ordinal_as_factor=ordinal_as_factor, 
+                             order_ordinal_factors=order_ordinal_factors, 
+                             ordinal_as_integer=ordinal_as_integer, 
+                             feature_name_suffix=ord_feature_name_suffix)
+  
+  
+  
+  ########## NOMINAL CATEGORICAL FEATURES SECTION ##########
+  df <- clean_nominal_features(df)
+  
+  
+  ########## ADDRESS HEAVILY IMBALANCED FEATURES ##########
+  df <- remove_heavily_imbalanced_factors(dataframe=df,
+                                          training_data=training_data,
+                                          save_path=imbalanced_factor_save_path,
+                                          imbalance_threshold=imbalance_threshold)
+  
+  
+  
+  df <- add_custom_columns(df)
+  
+  # Add the log of sale price if this is the training data
+  if(training_data){
+    df[,"Log_SalePrice"] <- log(df[,"SalePrice"])
+  }
+  
+  df <- filter_inf_vif_columns(df=df,
+                               target=target,
+                               training_data=training_data,
+                               save_path=inf_vif_save_path,
+                               vif_threshold=vif_threshold)
+  
+  return(df)
+  
+}
+
+#################################### END Data Cleaning #################################### 
+
+
+
+run_backward_selection <- function(df, target="SalePrice", extra_exclusions=c()){
+  
+  
+  lm_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=extra_exclusions)
+  
+  return(lm_df)
+  
+}
+
 
 
