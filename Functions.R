@@ -495,7 +495,8 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
                             order_ordinal_factors=FALSE, ordinal_as_integer=FALSE, ord_feature_name_suffix="", 
                             imbalance_threshold=0.80, train_imputation_save_path="./imputations_for_test_data.csv",
                             imbalanced_factor_save_path="./imbalanced_categoricals.csv",
-                            inf_vif_save_path="./infinite_vif_features.csv", vif_threshold=50){
+                            inf_vif_save_path="./infinite_vif_features.csv", vif_threshold=50,
+                            filter_vifs=TRUE, verbose=TRUE){
   
   
   garbage_features <- c("Utilities", "Id")
@@ -517,7 +518,6 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
                              feature_name_suffix=ord_feature_name_suffix)
   
   
-  
   ########## NOMINAL CATEGORICAL FEATURES SECTION ##########
   df <- clean_nominal_features(df)
   
@@ -537,11 +537,19 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
     df[,"Log_SalePrice"] <- log(df[,"SalePrice"])
   }
   
-  df <- filter_inf_vif_columns(df=df,
-                               target=target,
-                               training_data=training_data,
-                               save_path=inf_vif_save_path,
-                               vif_threshold=vif_threshold)
+  
+  if(filter_vifs){
+    df <- filter_inf_vif_columns(df=df,
+                                 target=target,
+                                 training_data=training_data,
+                                 save_path=inf_vif_save_path,
+                                 vif_threshold=vif_threshold,
+                                 verbose=verbose)    
+    
+    
+    
+  }
+
   
   return(df)
   
@@ -550,15 +558,299 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
 #################################### END Data Cleaning #################################### 
 
 
-
-run_backward_selection <- function(df, target="SalePrice", extra_exclusions=c()){
+create_project_directory <- function(project_directory=NULL){
   
+  if(is.null(project_directory)){
+    
+    dir_name <- paste0(getwd(),"/Ames_",stringr::str_replace_all(string=format(Sys.time(), "%F %H-%M-%S"),
+                                                                 pattern=" ",
+                                                                 replacement="_"),
+                       "_Feat_Selections")
+    
+  }else{
+    
+    dir_name <- project_directory
+  }
   
-  lm_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=extra_exclusions)
+  dir.create(path=dir_name)
   
-  return(lm_df)
+  return(dir_name)
   
 }
+
+
+
+perform_feature_selections <- function(test_data, train_data, project_directory=NULL, ordinal_as_factor=TRUE,
+                                       target="SalePrice", order_ordinal_factors=FALSE, ordinal_as_integer=FALSE,
+                                       ord_feature_name_suffix="",imbalance_threshold=0.80, vif_threshold=50,
+                                       filter_vifs=TRUE, verbose=FALSE, extra_feature_exclusions=c(), p_remove=0.15,
+                                       p_enter=0.15){
+  
+  
+  # SET UP PROJECT DIRECTORY AND FILE SAVE MATHS
+  proj_dir <- create_project_directory(project_directory=project_directory)
+  
+  imputation_path <- paste0(proj_dir, "/imputations_for_test_data.csv")
+  imbalanced_factors_path <- paste0(proj_dir, "/imbalanced_categoricals.csv")
+  high_vif_path <- paste0(proj_dir, "/high_vif_features.csv")
+  parameter_file <- paste0(proj_dir, "/parameter_report.txt")
+  model_save_path <- paste0(proj_dir, "/best_models.csv")
+  
+  param_file <- create_parameter_text_file(ordinal_as_factor=ordinal_as_factor, ordinal_as_integer=ordinal_as_integer,
+                                           imbalance_threshold=imbalance_threshold, vif_threshold=vif_threshold, 
+                                           filter_vifs=filter_vifs, extra_feature_exclusions=extra_feature_exclusions,
+                                           p_remove=p_remove, p_enter=p_enter, target=target, param_filepath=parameter_file)
+  
+  
+  always_exclude <- c("MSSubClass", "Utilities")
+  extra_feature_exclusions <- append(always_exclude, extra_feature_exclusions)
+  
+  # SET UP TRAINING AND TEST SETS
+  train_clean_df <- clean_ames_data(df=train_data,
+                                    training_data=TRUE,
+                                    ordinal_as_factor=ordinal_as_factor,
+                                    target=target,
+                                    order_ordinal_factors=order_ordinal_factors,
+                                    ordinal_as_integer=ordinal_as_integer,
+                                    ord_feature_name_suffix=ord_feature_name_suffix,
+                                    imbalance_threshold=imbalance_threshold,
+                                    vif_threshold=vif_threshold,
+                                    filter_vifs=filter_vifs,
+                                    train_imputation_save_path=imputation_path,
+                                    imbalanced_factor_save_path=imbalanced_factors_path,
+                                    inf_vif_save_path=high_vif_path,
+                                    verbose=verbose)
+  
+  
+  test_clean_df <- clean_ames_data(df=test_data,
+                                   training_data=FALSE,
+                                   ordinal_as_factor=ordinal_as_factor,
+                                   target=target,
+                                   order_ordinal_factors=order_ordinal_factors,
+                                   ordinal_as_integer=ordinal_as_integer,
+                                   ord_feature_name_suffix=ord_feature_name_suffix,
+                                   imbalance_threshold=imbalance_threshold,
+                                   vif_threshold=vif_threshold,
+                                   filter_vifs=filter_vifs,
+                                   train_imputation_save_path=imputation_path,
+                                   imbalanced_factor_save_path=imbalanced_factors_path,
+                                   inf_vif_save_path=high_vif_path,
+                                   verbose=verbose) 
+  
+  
+  # CREATE MODELING DATASET, ENSURES ONLY COLUMNS IN DATAFRAME ARE THE SINGLE
+  # DESIRED TARGET AND THE PREDICTORS THAT THE FEATURE SELECTION ROUTINE IS
+  # ALLOWED TO CHOOSE FROM.
+  model_df <<- prepare_model_dataset(df=train_clean_df,
+                                     target=target,
+                                     extra_exclusions=extra_feature_exclusions)
+  
+  
+  
+  # FIT THE LINEAR MODEL THAT WILL BE PASSED TO THE FEATURE SELECTION ALGORITHMS.
+  full_fit <<- lm(formula=target~., data=model_df)
+  
+  
+  cat("STARTING BEST SUBSET\n")
+  ### BEST SUBSET, SORTED BY SBIC
+ 
+  best_subset_sbic_df <- perform_best_subset_regression(regression_df=model_df)
+  
+  cat("END BEST SUBSET\n")
+  
+  cat("STARTING BACKWARD AIC\n")
+  # Backward Selection, AIC:
+  backward_aic <- olsrr::ols_step_backward_aic(model=full_fit,
+                                               progress=verbose,
+                                               details=verbose)
+  cat("END BACKWARD AIC\n")
+      
+  
+  # Forward Selection, AIC:
+  forward_aic <- olsrr::ols_step_forward_aic(model=full_fit,
+                                               progress=verbose,
+                                               details=verbose)
+      
+  cat("STARTING STEPWISE AIC\n")
+  # Step wise Selection, AIC:
+  stepwise_aic <- olsrr::ols_step_both_aic(model=full_fit,
+                                           progress=verbose,
+                                           details=verbose)
+  cat("END STEPWISE AIC\n")
+      
+      
+  aic_list <- list(backward=backward_aic,
+                   forward=forward_aic,
+                   stepwise=stepwise_aic,
+                   model_dataframe=model_df)
+  
+  
+  aic_df <- build_selection_df_aic(aic_selections=aic_list)
+  
+  
+  # P-value based selections
+
+  # Backward Selection
+  backward_p <- olsrr::ols_step_backward_p(model=full_fit,
+                                           progress=verbose,
+                                           details=verbose,
+                                           prem=p_remove)
+    
+
+    # Forward Selection
+  forward_p <- olsrr::ols_step_forward_p(model=full_fit,
+                                         progress=verbose,
+                                         details=verbose,
+                                         penter=p_enter)
+    
+
+  # Stepwise Selection
+  stepwise_p <- olsrr::ols_step_both_p(model=full_fit,
+                                      progress=verbose,
+                                      details=verbose,
+                                      pent=p_enter,
+                                      prem=p_remove)
+  
+  
+
+  p_list <- list(backward=backward_p,
+                 forward=forward_p,
+                 stepwise=stepwise_p,
+                 model_dataframe=model_df)
+  
+  
+  p_df <- build_selection_df_p(p_selections=p_list)
+  
+  result_df <- rbind(aic_df, p_df, best_subset_sbic_df)
+  
+  test_evals <- perform_test_set_evaluations(clean_test_data=test_clean_df,
+                                             clean_train_data=model_df,
+                                             selected_models_df=result_df,
+                                             project_directory=proj_dir)
+  
+  
+  result_df[,"KS_Stat"] <- test_evals$kstest_stats
+  result_df[,"KS_Pvalues"] <- test_evals$kstest_pvalues
+  
+  write.csv(result_df, model_save_path)
+  
+  return(result_df)
+  
+}
+
+build_parameter_string <- function(imb, vf, tg, pin, pout, ordf, ordi){
+  
+  param_string <- paste0("target=",tg," imb=",imb, " vif=", vf, " ordint=",ordi,
+                         " ordfact=", ordf," pin=", pin, " pout=", pout)
+  
+  return(param_string)
+}
+
+
+master_model_search <- function(test_data, train_data){
+  
+  
+  # Hyperparameterize the data cleaning decision of making the ordinal features
+  # factors (dummy columns), or simply converting them to integers.
+  ord_processing <- list(option1=list(ord_as_fact=TRUE,
+                                      ord_as_int=FALSE),
+                         option2=list(ord_as_fact=FALSE,
+                                      ord_as_int=TRUE))
+  
+  # Search over two different pairs of values for penter and premove
+  # which are used in the stepwise feature selection methods
+  p_processing <- list(option1=list(prm=0.1,
+                                    pent=0.05),
+                       option2=list(prm=0.15,
+                                    pent=0.25))
+  
+  
+  # Search over the threshold level for removing an 
+  # imbalanced categorical feature
+  imb_thresholds <- c(0.80, 0.70, 0.65)
+  
+  # Search over the vif_threshold for when to remove a 
+  # feature due to high VIF scores
+  vif_thresholds <- c(50, 60)
+  
+  # Search over two potential target colums, log and regular
+  target_columns <- c("SalePrice", "Log_SalePrice")
+  
+  # Keeps track of number of searches performed, used to update save
+  # file name inside the inner-most loop.
+  iteration_counter = 45
+
+  for(p_index in 1:length(p_processing)){
+    
+    p_name <- names(p_processing)[p_index]
+    p_in <- p_processing[[p_name]]$pent
+    p_out <- p_processing[[p_name]]$prm
+  
+    for(vif_index in 1:length(vif_thresholds)){
+      
+      v_thresh <- vif_thresholds[vif_index]
+      
+      for(ord_index in 1:length(ord_processing)){
+        
+        ord_name <- names(ord_processing)[ord_index]
+        
+        ord_facts <- ord_processing[[ord_name]]$ord_as_fact
+        ord_ints <- ord_processing[[ord_name]]$ord_as_int
+        
+        for(imb_index in 1:length(imb_thresholds)){
+          
+          imb_thresh <- imb_thresholds[imb_index] 
+          
+          for(target_index in 1:length(target_columns)){
+            
+            iteration_counter <- iteration_counter + 1
+            
+            targ <- target_columns[target_index]
+            
+            search_df <- perform_feature_selections(test_data=test_data,
+                                                    train_data=train_data,
+                                                    ordinal_as_factor=ord_facts,
+                                                    ordinal_as_integer=ord_ints,
+                                                    target=targ,
+                                                    imbalance_threshold=imb_thresh,
+                                                    vif_threshold=v_thresh,
+                                                    p_remove=p_out,
+                                                    p_enter=p_in,
+                                                    filter_vifs = TRUE)
+            
+            
+            
+            params <- build_parameter_string(imb=imb_thresh,
+                                             vf=v_thresh,
+                                             tg=targ,
+                                             pin=p_in,
+                                             pout=p_out,
+                                             ordf=ord_facts, 
+                                             ordi=ord_ints)
+            
+            
+            search_df[,"Params"] <- params
+            search_df[,"target_name"] <- targ
+            
+            if(iteration_counter==46){
+              final_df <- search_df
+              
+            }else{
+              final_df <- rbind(final_df, search_df)
+            }
+            
+            save_name <- paste0("./Master_Search/Master_Feature_Selection_", iteration_counter, ".csv")
+            write.csv(final_df, save_name)
+
+          }
+        }
+      }
+    }  
+  }
+  return(final_df)
+}
+
+
 
 
 

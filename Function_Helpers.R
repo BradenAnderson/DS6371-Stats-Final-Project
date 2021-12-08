@@ -8,6 +8,7 @@ library(patchwork)
 library(EnvStats)
 library(olsrr)
 library(sjmisc)
+library(dgof)
 
 #################################### PLOT LABELING #######################################
 
@@ -1699,7 +1700,6 @@ impute_missing_values_ames <- function(df, train_data, save_path){
                         "BsmtFullBath", "BsmtHalfBath", "GarageCars", "GarageArea")
   
   
-  
   # IMPUTE MISSING VALUES IN GARAGEYRBUILT WITH THE YEAR THE HOME WAS BUILT
   df[is.na(df[,"GarageYrBlt"]),"GarageYrBlt"] <- df[is.na(df[,"GarageYrBlt"]),"YearBuilt"]
   
@@ -1990,7 +1990,7 @@ clean_nominal_features <- function(df){
 
 prepare_model_dataset <- function(df, target, extra_exclusions){
   
-  non_predictor_columns <- c("SalePrice", "Log_SalePrice", "Id")
+  non_predictor_columns <- c("SalePrice", "Log_SalePrice", "Id", "target")
   
   non_predictor_columns <- append(non_predictor_columns, extra_exclusions)
   
@@ -1998,27 +1998,34 @@ prepare_model_dataset <- function(df, target, extra_exclusions){
   # wish to manually exclude
   potential_predictors <- names(df)[!(names(df) %in% non_predictor_columns)]
   
+  write.csv(df, "./troubleshoot.csv")
+  
   # Create a dataframe containing all potential predictors, and the desired target
   model_df <- df[, (names(df) %in% potential_predictors)]
-  model_df[,"target"] <- df[,target]
+  
+  if("target" %in% names(df)){
+    model_df[,"target"] <- df[,"target"]
+  }else{
+    model_df[,"target"] <- df[,target]  
+  }
+  
   
   return(model_df)
   
 }
 
 
-
-
-filter_inf_vif_columns <- function(df, target, training_data, save_path, vif_threshold){
+filter_inf_vif_columns <- function(df, target, training_data, save_path,
+                                   vif_threshold, verbose){
   
   
   if(training_data){
     
     # Dataframe to create the lm model with
-    model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
+    vif_model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
     
     # Fit the model and compute VIFs
-    fit <- lm(formula=target~., data=model_df, x=TRUE)
+    fit <- lm(formula=target~., data=vif_model_df, x=TRUE)
     model_vifs <- vif(fit)
     max_vif = max(model_vifs)
     
@@ -2036,7 +2043,7 @@ filter_inf_vif_columns <- function(df, target, training_data, save_path, vif_thr
       high_vif_names <- names(model_vifs[model_vifs >= vif_threshold])
       
       # Get a vector of all predictor names
-      column_names <- names(model_df)
+      column_names <- names(vif_model_df)
       predictor_names <- column_names[column_names != target]
       
       for(col_index in 1:length(predictor_names)){
@@ -2044,44 +2051,455 @@ filter_inf_vif_columns <- function(df, target, training_data, save_path, vif_thr
         column_name <- predictor_names[[col_index]]
         
         if(sjmisc::str_contains(x=high_vif_names, pattern=column_name)){
-          
+      
           high_vif_columns <- append(high_vif_columns, column_name)
         }
       }    
       
       df <- df[,!(names(df) %in% high_vif_columns)]  
-      model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
+      vif_model_df <- prepare_model_dataset(df=df, target=target, extra_exclusions=c())
       
       # Fit the model and compute VIFs
-      fit <- lm(formula=target~., data=model_df, x=TRUE)
+      fit <- lm(formula=target~., data=vif_model_df, x=TRUE)
       model_vifs <- vif(fit)
       max_vif <- max(model_vifs)
       
-      cat("\n\n")
-      print("******************************************************")
-      print(paste0("Finished Loop: ", loop_count))
-      cat("\n")
-      print("Max VIF: ")
-      print(max_vif)
-      print("Model VIFS:")
-      print(model_vifs)
-      cat("\n\n")
-      print("******************************************************")
-      cat("\n\n")
+      if(verbose){
+        cat("\n\n")
+        print("******************************************************")
+        print(paste0("Finished Loop: ", loop_count))
+        cat("\n")
+        print("Features Removed: ")
+        cat("\n")
+        print(high_vif_columns)
+        cat("\n")
+        print("Max Remaining VIF: ")
+        print(max_vif)
+        cat("\n")
+        print("Model VIFS:")
+        print(model_vifs)
+        cat("\n\n")
+        print("******************************************************")
+        cat("\n\n")        
+      }
     }
     
-    
+  
     # Save the columns removed, so we can mimic this on test data.
     vif_removal_df <- data.frame(high_vif_features=high_vif_columns)
     write.csv(vif_removal_df, save_path)
+    return(vif_model_df)
     
-  }else{ #else, this is the test data
+  }
+  else{ #else, this is the test data
+
+      vif_df <- read.csv(save_path)
+      columns_to_remove <- vif_df[,"high_vif_features"]
+      df <- df[,!(names(df) %in% columns_to_remove)]
+      return(df)
+
+  }
+}
+
+build_lm_from_preds <- function(m_df, preds){
+  
+  l_df <- m_df[,(names(m_df) %in% preds)]
+  l_df[,"target"] <- m_df[,"target"]
+  
+  lm_fitted <- lm(target~., data=l_df)
+  
+  return(lm_fitted)
+}
+
+
+build_ols_regress_from_preds <- function(m_df, preds){
+  
+  l_df <- m_df[,(names(m_df) %in% preds)]
+  l_df[,"target"] <- m_df[,"target"]
+  
+  ols_regression <- olsrr::ols_regress(target~., data=l_df)
+  
+  return(ols_regression)
+}
+
+
+perform_best_subset_regression <- function(regression_df){
+  
+  gaurenteed_names <- c("TotalIndoorSF")
+  
+  non_sampleable <- c(gaurenteed_names, "target")
+  
+  potential_names <- names(regression_df)[!(names(regression_df) %in% non_sampleable)]
+  
+  num_potential_features <- length(potential_names)
+  
+  if(num_potential_features > 10){
+    num_samples <- 10
+  }else{
+    num_samples <- num_potential_features
+  }
+  
+  
+  feature_samples <- sample(x=seq(from=1, 
+                                  to=num_potential_features, 
+                                  by=1),
+                            size=num_samples,
+                            replace=FALSE)
+  
+  selected_names <- potential_names[feature_samples]
+  
+  for(name_index in 1:length(gaurenteed_names)){
     
-    vif_df <- read.csv(save_path)
-    columns_to_remove <- vif_df[,"high_vif_features"]
-    df <- df[,!(names(df) %in% columns_to_remove)]
+    current_name <- gaurenteed_names[name_index]
+    
+    if(current_name %in% potential_names){
+      selected_names <- append(selected_names, current_name)    
+    }
+  }
+  
+  reg_df <<- regression_df[,selected_names]
+  reg_df[,"target"] <<- regression_df[,"target"]
+  
+  best_fit <<- lm(target~., data=reg_df)
+  
+  best_subset <- olsrr::ols_step_best_subset(best_fit)
+  
+  best_subset_df <- build_best_subset_df(subset_result=best_subset,
+                                         model_dataframe=reg_df)
+  
+  return(best_subset_df)
+  
+  
+}
+
+
+build_best_subset_df <- function(subset_result, model_dataframe, subset_metric="sbic"){
+  
+  
+  
+  bs_df <- data.frame(subset_result)
+  
+  best <- bs_df[order(bs_df[,subset_metric], decreasing=FALSE),][1,]
+  
+  best_preds <- best[,"predictors"]
+  
+  best_pred_vector <- strsplit(x=best_preds, split=" ")[[1]]
+  
+  num_preds <- length(best_pred_vector)
+  
+  best_regress <- build_ols_regress_from_preds(m_df=model_dataframe,
+                                               preds=best_pred_vector)
+  
+  
+  
+  coef_determ <- best_regress$r
+  rmse <- best_regress$sigma
+  coef_variation <- best_regress$cv
+  mse <- best_regress$mse
+  mae <- best_regress$mae
+  sbc <- best_regress$sbc
+  sbic <- best_regress$sbic
+  pred_rsq <- best_regress$prsq
+  tss <- best_regress$tss
+  rss <- best_regress$rss
+  ess <- best_regress$ess
+  rms <- best_regress$rms
+  ems <- best_regress$ems
+  aic <- best_regress$aic
+  adj_rsquare <- best_regress$adjr
+  rsquare <- best_regress$rsq
+  
+  search_fit <- build_lm_from_preds(m_df=model_dataframe,
+                                    preds=best_pred_vector)
+  
+  
+  msep <- ols_msep(model=search_fit)
+  PRESS <- ols_press(model=search_fit)
+  
+  result_data <- data.frame(selection_algorithm=c("Best Subset (SBIC)"),
+                            predictors_chosen=c(best_preds),
+                            num_predictors=c(num_preds),
+                            PRESS=c(PRESS),
+                            MSEP=c(msep),
+                            AIC=c(aic), 
+                            SBC=c(sbc),
+                            SBIC=c(sbic),
+                            RMSE=c(rmse),
+                            MSE=c(mse),
+                            MAE=c(mae),
+                            Adj_Rsquare=c(adj_rsquare),
+                            Pred_Rquare=c(pred_rsq),
+                            RSquare=c(rsquare),
+                            Coef_Determ=c(coef_determ),
+                            Coef_Var=c(coef_variation),
+                            Total_SS=c(tss),
+                            Reg_SS=c(rss),
+                            Err_SS=c(ess),
+                            RMS=c(rms),
+                            EMS=c(ems),
+                            Function_Used=c("ols_step_best_subset"))
+  
+  return(result_data)
+  
+}
+
+
+build_selection_df_from_search <- function(search, model_dataframe, algorithm_name, func_used){
+  
+
+  if(algorithm_name != "Stepwise (aic)"){
+    model_predictors <- attr(search$model$terms , "term.labels")  
+  }else{
+    model_predictors <- search$predictors  # ISSUE WITH STEPWISE AIC
+  }
+  
+  
+  preds <- stringr::str_c(model_predictors, 
+                          collapse=" ")
+  
+  num_preds <- length(model_predictors)
+  
+  
+  best_regress <- build_ols_regress_from_preds(m_df=model_dataframe,
+                                               preds=model_predictors)
+  
+  
+  coef_determ <- best_regress$r
+  rmse <- best_regress$sigma
+  coef_variation <- best_regress$cv
+  mse <- best_regress$mse
+  mae <- best_regress$mae
+  sbc <- best_regress$sbc
+  sbic <- best_regress$sbic
+  pred_rsq <- best_regress$prsq
+  tss <- best_regress$tss
+  rss <- best_regress$rss
+  ess <- best_regress$ess
+  rms <- best_regress$rms
+  ems <- best_regress$ems
+  aic <- best_regress$aic
+  adj_rsquare <- best_regress$adjr
+  rsquare <- best_regress$rsq
+  
+  search_fit <- build_lm_from_preds(m_df=model_dataframe,
+                                    preds=model_predictors)
+  
+  msep <- ols_msep(model=search_fit)
+  PRESS <- ols_press(model=search_fit)
+  
+  
+  result_data <- data.frame(selection_algorithm=c(algorithm_name),
+                            predictors_chosen=c(preds),
+                            num_predictors=c(num_preds),
+                            PRESS=c(PRESS),
+                            MSEP=c(msep),
+                            AIC=c(aic), 
+                            SBC=c(sbc),
+                            SBIC=c(sbic),
+                            RMSE=c(rmse),
+                            MSE=c(mse),
+                            MAE=c(mae),
+                            Adj_Rsquare=c(adj_rsquare),
+                            Pred_Rquare=c(pred_rsq),
+                            RSquare=c(rsquare),
+                            Coef_Determ=c(coef_determ),
+                            Coef_Var=c(coef_variation),
+                            Total_SS=c(tss),
+                            Reg_SS=c(rss),
+                            Err_SS=c(ess),
+                            RMS=c(rms),
+                            EMS=c(ems),
+                            Function_Used=c(func_used))
+  
+  return(result_data)
+  
+}
+
+build_selection_df_p <- function(p_selections){
+  
+  fwd <- p_selections$forward
+  bwd <- p_selections$backward
+  stp <- p_selections$stepwise
+  
+  model_dataframe <- p_selections$model_dataframe
+  
+  fwd_result_df <- build_selection_df_from_search(search=fwd,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Forward (p-values)",
+                                                  func_used="ols_step_forward_p")
+  
+  
+  
+  bwd_result_df <- build_selection_df_from_search(search=bwd,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Backward (p-values)",
+                                                  func_used="ols_step_backward_p")
+  
+  stp_result_df <- build_selection_df_from_search(search=stp,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Stepwise (p-values)", 
+                                                  func_used="ols_step_both_p") 
+  
+  
+  combined_p_df <- rbind(fwd_result_df, bwd_result_df, stp_result_df)
+  
+  
+  return(combined_p_df)
+  
+}
+
+build_selection_df_aic <- function(aic_selections){
+  
+  fwd <- aic_selections$forward
+  bwd <- aic_selections$backward
+  stp <- aic_selections$stepwise
+  
+  model_dataframe <- aic_selections$model_dataframe
+  
+  fwd_result_df <- build_selection_df_from_search(search=fwd,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Forward (aic)",
+                                                  func_used="ols_step_forward_aic")
+  
+  
+  
+  bwd_result_df <- build_selection_df_from_search(search=bwd,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Backward (aic)",
+                                                  func_used="ols_step_backward_aic")
+  
+  stp_result_df <- build_selection_df_from_search(search=stp,
+                                                  model_dataframe=model_dataframe,
+                                                  algorithm_name="Stepwise (aic)", 
+                                                  func_used="ols_step_both_aic") 
+  
+  
+  combined_df <- rbind(fwd_result_df, bwd_result_df, stp_result_df)
+  
+  return(combined_df)
+  
+}
+
+create_parameter_text_file <- function(ordinal_as_factor, ordinal_as_integer, imbalance_threshold,
+                                       vif_threshold, filter_vifs, extra_feature_exclusions, p_remove,
+                                       p_enter, target, param_filepath){
+  
+  
+  cat("=========================================\n", file=param_filepath)
+  cat("              PARAMETER REPORT           ", file=param_filepath, append=TRUE)
+  cat("\n=========================================\n\n", file=param_filepath, append=TRUE)
+  
+  
+  cat("Target Column: ", target, "\n\n", file=param_filepath, append=TRUE)
+  
+  if(filter_vifs){
+    cat("Filter VIFs: Yes\n", file=param_filepath, append=TRUE)
+    cat("VIF Filter Threshold: ", vif_threshold, "\n", file=param_filepath, append=TRUE)
+  }else{
+    cat("Filter VIFs: No\n", file=param_filepath, append=TRUE)
+    cat("VIF Filter Threshold: N/A \n", file=param_filepath, append=TRUE)
+  }
+  
+  if(ordinal_as_integer){
+    cat("Ordinal Feature Format: Integer\n", file=param_filepath, append=TRUE)
+    cat("Categorical Imbalance Threshold: ", imbalance_threshold, "\n", file=param_filepath, append=TRUE)
+  }else if(ordinal_as_factor){
+    cat("Ordinal Feature Format: Factor\n", file=param_filepath, append=TRUE)
+    cat("Categorical Imbalance Threshold: ", imbalance_threshold, "\n", file=param_filepath, append=TRUE)
   }
 
+  
+  cat("P-value to Enter: ", p_enter, "\n", file=param_filepath, append=TRUE)
+  cat("P-value to Remove", p_remove, "\n\n", file=param_filepath, append=TRUE)
+  
+  cat("Extra feature exclusions: ", extra_feature_exclusions, "\n", file=param_filepath, append=TRUE)
+  
+  return("Parameter File Created")
+  
+}
+
+perform_test_set_evaluations <- function(clean_test_data, clean_train_data, selected_models_df,
+                                         project_directory="./"){
+  
+  #clean_train_data[,"target"] <- clean_train_data[,"SalePrice"]
+  
+  num_models <- nrow(selected_models_df)
+  
+  ks_test_stats <- c()
+  ks_p_values <- c()
+  
+  for(model_index in 1:num_models){
+    
+    features <- selected_models_df[model_index, "predictors_chosen"]
+    feature_vector <- strsplit(features, split=" ")[[1]]
+    
+    model_name <- selected_models_df[model_index, "selection_algorithm"]
+    submission_filepath <- paste0(project_directory, "/SUBISSION_", model_name, ".csv")
+    
+    train_df <<- clean_train_data[,feature_vector]
+    train_df[,"target"] <<- clean_train_data[,"target"]
+    
+    test_df <- clean_test_data[,feature_vector]
+    
+    fit <- lm(target~., data=train_df)
+    
+    # PREDICT ON THE TEST SET
+    predictions <- predict(fit, newdata=test_df)
+    
+    # PREDICT ON THE TRAINING SET (ONLY FOR KS.TEST USAGE)
+    train_predictions <- predict(fit, newdata=train_df[,(names(train_df) != "target")])
+    ks_result <- dgof::ks.test(x=train_predictions, y=predictions)
+    ks_test_stats <- append(ks_test_stats, ks_result$statistic[[1]])
+    ks_p_values <- append(ks_p_values, ks_result$p.value)
+    
+    submission_df <- data.frame(Id=clean_test_data[,"Id"], SalePrice=predictions)
+    write.csv(submission_df, submission_filepath, row.names=FALSE)
+    
+  }
+  
+  return(list(kstest_stats=ks_test_stats,
+              kstest_pvalues=ks_p_values))
+  
+}
+
+generate_kaggle_submission <- function(fit, submission_filepath, test_data, log_target){
+  
+  predictions <- predict(fit, newdata=test_data)
+  
+  if(log_target){
+    predictions <- exp(predictions)
+  }
+  
+  submission_df <- data.frame(Id=test_data[,"Id"], SalePrice=predictions)
+  
+  write.csv(submission_df, submission_filepath, row.names=FALSE)
+  
+  return(submission_df)
+  
+}
+
+
+filter_dataframe <- function(df, metric, order_decreasing=FALSE, algo_type=NULL, min_ks_pvalue=NULL){
+  
+  if(!is.null(algo_type)){
+    
+    if(algo_type == "backward"){
+      df <- df[((df[,"selection_algorithm"] == "Backward (aic)") | (df[,"selection_algorithm"] == "Backward (p-values)")),]
+    }else if(algo_type == "forward"){
+      df <- df[((df[,"selection_algorithm"] == "Forward (aic)") | (df[,"selection_algorithm"] == "Forward (p-values)")),]
+    }else if(algo_type == "stepwise"){
+      df <- df[((df[,"selection_algorithm"] == "Stepwise (aic)") | (df[,"selection_algorithm"] == "Stepwise (p-values)")),]
+    }else if(algo_type == "best_subset"){
+      df <- df[(df[,"selection_algorithm"] == "Best Subset (SBIC)"),]
+    }
+  }
+  
+  if(!is.null(min_ks_pvalue)){
+    df <- df[df[,"KS_Pvalues"] >= min_ks_pvalue,]
+    
+  }
+  
+  df <- df[order(df[,metric], decreasing=order_decreasing),]
+  
   return(df)
- 
 }

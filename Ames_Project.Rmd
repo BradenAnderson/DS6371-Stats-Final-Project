@@ -120,7 +120,6 @@ separate_fits <- lm(SalePrice~GrLivArea+
                       Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
                     data=century_df)
 
-
 summary(separate_fits)
 ```
 
@@ -283,7 +282,6 @@ plot_residual_vs_leverage(fit=separate_fits,
                           dataframe=century_df,
                           residual_type="externally_studentized",
                           resid_line_threshold=1.7)
-
 
 # Observations 643, 524 and 1299 all have leverage values greater than 3 times the
 # average leverage, as well as significantly large residuals. For observations 643 and 1299 
@@ -537,8 +535,6 @@ summary(separate_fits_obsrm)$adj.r.squared
 
 ```
 
-
-
 # Revisiting Assumptions on Log Transformed Data
 ```{r}
 
@@ -554,6 +550,30 @@ separate_fits_log <- lm(log_SalePrice~GrLivArea+
 
 summary(separate_fits_log)  
 ```
+
+
+```{r}
+plot_residuals(separate_fits_log, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+```
+
+
+
+```{r}
+plot_residual_vs_leverage(fit=separate_fits_log,
+                          dataframe=century_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=1.7)
+
+```
+
+
+
 
 ```{r}
 
@@ -622,30 +642,513 @@ partial_f_log_obsrm
 
 ```
 
+
 ```{r}
 
-plot_residuals(separate_fits, 
-               dataframe=century_df,
-               residual_type="externally_studentized", 
-               plot_zero_hline=TRUE, 
-               extreme_thresh_regular=5, 
-               flag_extreme_values=TRUE, 
-               id_extreme_values=TRUE, extreme_thresh_std = 2.5)
+gs1 <- read.csv("./Feature_Selections1.csv")
+gs1[,"Search_Round"] <- 1
+
+gs2 <- read.csv("./Feature_Selections2.csv")
+gs2[,"Search_Round"] <- 2
+
+search_df <- rbind(gs1, gs2)
+```
 
 
+```{r}
+log_searches <- search_df[search_df[,"target_name"] == "Log_SalePrice",]
+linear_searches <- search_df[search_df[,"target_name"] == "SalePrice",]
+```
+
+
+
+# Log SalePrice Models
+
+## Log Forward Selection
+```{r}
+
+log_forward_df <- filter_dataframe(df=log_searches,
+                                   metric="PRESS",
+                                   algo_type="forward")
+
+head(log_forward_df)
 ```
 
 
 
 ```{r}
 
-plot_residuals(separate_fits_log, 
-               dataframe=century_df,
-               residual_type="externally_studentized", 
-               plot_zero_hline=TRUE, 
-               extreme_thresh_regular=5, 
-               flag_extreme_values=TRUE, 
-               id_extreme_values=TRUE, extreme_thresh_std = 2.5)
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_forward_preds <- strsplit(x=log_forward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_forward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_forward_preds)
+
+
+log_fwd_submit_df <- generate_kaggle_submission(fit=log_forward_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_forward_selection_preds.csv")
+
+head(log_fwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14293
+```
+
+
+```{r}
+olsrr::ols_press(log_forward_lm)
+exp(18.59828)
+```
+
+
+## Log Backward Selection
+```{r}
+log_backward_df <- filter_dataframe(df=log_searches,
+                                    metric="PRESS",
+                                    algo_type="backward")
+
+head(log_backward_df)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_backward_preds <- strsplit(x=log_backward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_backward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_backward_preds)
+
+
+log_bwd_submit_df <- generate_kaggle_submission(fit=log_backward_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_backward_selection_preds.csv")
+
+head(log_bwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14219
+```
+
+```{r}
+olsrr::ols_press(log_backward_lm)
+exp(18.58928)
+```
+
+## Log Stepwise Selection
+```{r}
+
+log_stepwise_df <- filter_dataframe(df=log_searches,
+                                    metric="PRESS",
+                                    algo_type="stepwise")
+
+head(log_stepwise_df)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_stepwise_preds <- strsplit(x=log_stepwise_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+log_stepwise_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_stepwise_preds)
+
+
+log_stp_submit_df <- generate_kaggle_submission(fit=log_stepwise_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_stepwise_selection_preds.csv")
+
+head(log_stp_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14293
+```
+
+```{r}
+olsrr::ols_press(log_stepwise_lm)
+exp(18.59828)
+```
+
+## Log Best Subset Selection
+```{r}
+
+log_best_subset_df <- filter_dataframe(df=log_searches,
+                                       metric="PRESS",
+                                       algo_type="best_subset")
+
+head(log_best_subset_df)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=TRUE,
+                            ordinal_as_integer=FALSE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=TRUE,
+                           ordinal_as_integer=FALSE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_bestsubset_preds <- strsplit(x=log_best_subset_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+log_bestsubset_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_bestsubset_preds)
+
+
+log_bestsubset_submit_df <- generate_kaggle_submission(fit=log_bestsubset_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_bestsubset_selection_preds.csv")
+
+head(log_bestsubset_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.18134
+```
+
+
+
+## Log Best Overall
+```{r}
+
+log_best_overall_df <- filter_dataframe(df=log_searches,
+                                        metric="PRESS")
+
+head(log_best_overall_df)
+
+# 
+# Best overall for the Log_SalePrice group was backward selection
+```
+
+
+## Linear Forward Selection
+```{r}
+
+linear_forward_df <- filter_dataframe(df=linear_searches,
+                                   metric="PRESS",
+                                   algo_type="forward")
+
+head(linear_forward_df)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+linear_fwd_preds <- strsplit(x=linear_forward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+linear_fwd_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="SalePrice", 
+                                        explanatory_vars=linear_fwd_preds)
+
+
+linear_fwd_submit_df <- generate_kaggle_submission(fit=linear_fwd_lm,
+                                                test_data=test_df,
+                                                log_target=FALSE,
+                                                submission_filepath="./linear_fwd_selection_preds.csv")
+
+head(linear_fwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.18261
+```
+
+
+```{r}
+olsrr::ols_press(linear_fwd_lm)
+```
+
+# Linear Backward Selection
+```{r}
+linear_backward_df <- filter_dataframe(df=linear_searches,
+                                   metric="PRESS",
+                                   algo_type="backward")
+
+head(linear_backward_df)
+
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+linear_bwd_preds <- strsplit(x=linear_backward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+linear_bwd_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="SalePrice", 
+                                        explanatory_vars=linear_bwd_preds)
+
+
+linear_bwd_submit_df <- generate_kaggle_submission(fit=linear_bwd_lm,
+                                                test_data=test_df,
+                                                log_target=FALSE,
+                                                submission_filepath="./linear_bwd_selection_preds.csv")
+
+head(linear_bwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.18118
+```
+
+
+```{r}
+olsrr::ols_press(linear_bwd_lm)
+```
+
+```{r}
+
+linear_stepwise_df <- filter_dataframe(df=linear_searches,
+                                       metric="PRESS",
+                                       algo_type="stepwise")
+
+head(linear_stepwise_df)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+linear_stp_preds <- strsplit(x=linear_stepwise_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+linear_stp_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="SalePrice", 
+                                        explanatory_vars=linear_stp_preds)
+
+
+linear_stp_submit_df <- generate_kaggle_submission(fit=linear_stp_lm,
+                                                test_data=test_df,
+                                                log_target=FALSE,
+                                                submission_filepath="./linear_stp_selection_preds.csv")
+
+head(linear_stp_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.18261
+```
+
+
+
+
+## Linear Best Subset Selection
+```{r}
+
+linear_best_subset_df <- filter_dataframe(df=linear_searches,
+                                          metric="PRESS",
+                                          algo_type="best_subset")
+
+head(linear_best_subset_df)
+
+```
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=TRUE,
+                            ordinal_as_integer=FALSE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=TRUE,
+                           ordinal_as_integer=FALSE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+linear_bestsubset_preds <- strsplit(x=linear_best_subset_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+linear_bestsubset_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="SalePrice", 
+                                        explanatory_vars=linear_bestsubset_preds)
+
+
+linear_bestsubset_submit_df <- generate_kaggle_submission(fit=linear_bestsubset_lm,
+                                                test_data=test_df,
+                                                log_target=FALSE,
+                                                submission_filepath="./linear_bestsubset_selection_preds.csv")
+
+head(linear_bestsubset_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.21341
+```
+
+
+## Linear Best Overall
+```{r}
+
+linear_best_overall_df <- filter_dataframe(df=linear_searches,
+                                          metric="PRESS")
+
+head(linear_best_overall_df)
+#
+# Best overall was Forward (aic) for the models predicting SalePrice directly (rather than the log of SalePrice)
+```
+
+
+```{r}
 
 
 ```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
