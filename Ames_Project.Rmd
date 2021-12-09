@@ -125,6 +125,24 @@ summary(separate_fits)
 
 ```{r}
 
+t_df <- century_df[,(names(century_df) != "Id")]
+
+# PLOT THE SEPARATE LINES MODEL
+plot_slr_via_mlr(fit=separate_fits, 
+                 df=t_df,
+                 model_type="separate_lines",
+                 explanatory_continuous="GrLivArea", 
+                 explantory_grouping="Neighborhood",
+                 response="SalePrice",
+                 alpha=0.5,
+                 plot_group_means=TRUE,
+                 identify_obs=TRUE)
+
+```
+
+
+```{r}
+
 # PLOT THE SEPARATE LINES MODEL
 plot_slr_via_mlr(fit=separate_fits, 
                  df=century_df,
@@ -443,6 +461,10 @@ partial_f_obsrm
 ```
 
 
+
+
+
+
 ```{r}
 confint(separate_fits_obsrm)
 
@@ -551,6 +573,82 @@ separate_fits_log <- lm(log_SalePrice~GrLivArea+
 summary(separate_fits_log)  
 ```
 
+```{r}
+
+# Add a column for the log of SalePrice
+century_obsrm_df[,"log_SalePrice"] <- log(century_obsrm_df[,"SalePrice"])
+
+# SEPARATE LINES MODEL USING THE LOG OF SALEPRICE
+separate_fits_log_obsrm <- lm(log_SalePrice~GrLivArea+
+                              Neighborhood+             # Add intercept adjustment terms
+                              Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
+                              data=century_obsrm_df)
+
+
+summary(separate_fits_log_obsrm)  
+```
+
+```{r}
+confint(separate_fits_log_obsrm)
+```
+
+```{r}
+
+
+
+
+```
+
+
+
+```{r}
+
+brkside <- 0.0003241 + 0.0004141
+brkside <- brkside * 100
+brkside
+
+brkside
+pct <- exp(brkside)
+pct
+
+brkside_lwr <- 0.0003241 + .000273
+brkside_upper <- 0.0003241 + 0.000555
+
+brkside_lwr <- brkside_lwr * 100
+brkside_upper <- brkside_upper * 100
+
+pct_lwr <- exp(brkside_lwr)
+pct_upper <- exp(brkside_upper)
+
+pct
+pct_lwr
+pct_upper
+
+pct_upper - pct
+pct - pct_lwr
+```
+
+
+```{r}
+
+edwards <- 0.0003241 + 0.0002145
+edwards <- edwards * 100
+
+edwards
+e_pct <- exp(edwards)
+
+e_pct
+```
+
+
+
+
+```{r}
+sep_lines_log_PRESS_obsrm <- ols_press(model=separate_fits_log_obsrm)
+sep_lines_log_PRESS_obsrm
+exp(14.01493)
+```
+
 
 ```{r}
 plot_residuals(separate_fits_log, 
@@ -641,6 +739,8 @@ partial_f_log_obsrm
 
 
 ```
+
+
 
 
 ```{r}

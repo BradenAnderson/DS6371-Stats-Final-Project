@@ -496,7 +496,7 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
                             imbalance_threshold=0.80, train_imputation_save_path="./imputations_for_test_data.csv",
                             imbalanced_factor_save_path="./imbalanced_categoricals.csv",
                             inf_vif_save_path="./infinite_vif_features.csv", vif_threshold=50,
-                            filter_vifs=TRUE, verbose=TRUE){
+                            filter_vifs=TRUE, verbose=TRUE, remove_imbalanced_categoricals=TRUE){
   
   
   garbage_features <- c("Utilities", "Id")
@@ -523,10 +523,14 @@ clean_ames_data <- function(df, training_data=TRUE, ordinal_as_factor=TRUE, targ
   
   
   ########## ADDRESS HEAVILY IMBALANCED FEATURES ##########
-  df <- remove_heavily_imbalanced_factors(dataframe=df,
-                                          training_data=training_data,
-                                          save_path=imbalanced_factor_save_path,
-                                          imbalance_threshold=imbalance_threshold)
+  
+  if(remove_imbalanced_categoricals){
+    df <- remove_heavily_imbalanced_factors(dataframe=df,
+                                            training_data=training_data,
+                                            save_path=imbalanced_factor_save_path,
+                                            imbalance_threshold=imbalance_threshold)    
+  }
+
   
   
   

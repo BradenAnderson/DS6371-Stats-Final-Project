@@ -295,13 +295,13 @@ get_augmented_data <- function(df, analysis_var, explanatory_vars) {
 }
 
 # Fits a linear model based on string values specifying the response and explanatory variables
-build_lm_from_strings <- function(df, response_var, explanatory_vars){
+build_lm_from_strings <- function(df, response_var, explanatory_vars, x=FALSE){
   
   # Set up the formula for the linear model fit
   lm_formula <- as.formula(paste0(response_var, "~",str_c(explanatory_vars, collapse=" + ")))
   
   # Fit the model
-  fit <- lm(lm_formula, data=df)
+  fit <- lm(lm_formula, data=df, x=x)
   
   return(fit)
   
