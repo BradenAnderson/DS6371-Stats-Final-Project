@@ -1,0 +1,1421 @@
+---
+title: "Ames_Project"
+author: "Braden Anderson and Rayon Morris"
+date: "12/2/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+source("./Functions.R")
+```
+
+
+```{r}
+df <- read.csv("./train.csv")
+
+```
+
+```{r}
+
+# Convert the Neighborhood column to a factor, so it is compatible with creating
+# linear models with lm.
+df[,"Neighborhood"] <- factor(df[,"Neighborhood"])
+
+# Set the desired reference level within the neighborhood factor.
+df <- within(df, Neighborhood <- relevel(Neighborhood, ref="NAmes"))
+
+```
+
+
+```{r}
+
+# Filter dataframe such that it only includes rows where the neighborhood column
+# is one of the neighborhoods we are interested in for the part 1 analysis.
+
+# Neighborhoods that Century 21 Ames real estate sells in
+interesting_neighborhoods <- c("NAmes", "Edwards", "BrkSide")
+
+# Create a new dataframe that only contains the neighborhoods Centry 21 Ames sells in
+century_df <- df[(df[,"Neighborhood"] %in% interesting_neighborhoods), ]
+century_df[,"Neighborhood"] <- droplevels(century_df[,"Neighborhood"])
+
+# Verify the new dataframe only contains the neighborhoods: NAmes, Edwards, and BrkSide
+unique(century_df[,"Neighborhood"])
+levels(century_df[,"Neighborhood"])
+```
+
+```{r}
+
+# NOTES AND PART 1 OUTLINE:
+
+# Three potential regression models for SalePrice on GriLivArea across three neighborhoods of interest:
+#
+# 1) Equal Lines Model <-- Single regression line for all neighborhoods. The estimated mean house price for a given
+#                          house size is exactly the same, no matter which neighborhood the house is in.   
+#
+# 2) Parallel lines model <-- The rate of change in the mean house price, associated with a 1 unit increase in square
+#                             footage is the same for each neighborhood. Additionally, the difference in intercepts
+#                             represents the constant difference in mean house prices between neighborhoods, across all values
+#                             of the explanatory variable (house size).
+# 
+# 3) Separate lines model <-- The rate of change in mean house price, associated with a 1 unit increase in square footage
+#                             is different depending on which neighborhood the house is in.
+#
+#
+# Statistical sleuth page 250: When to Include Interaction Terms
+# 1) When a question of interest pertains to interaction (meadowfoam study).
+# 2) When good reason exists to suspect interaction.
+# 3) When interactions are proposed as a more general model for the purpose of examining
+#    the goodness of fit for a model without interaction.
+
+
+# ********** Questions of interest **********
+# 1) How does the SalePrice of a house relate to the square footage of the house (GrLivArea)?
+# 2) Does the relationship between SalePrice and square footage depend on what neighborhood the house is located in?
+
+
+# STRATEGY FOR QUESTION OF INTEREST #2:
+#
+#
+# Step 1: Start with the fullest model (separate lines model)
+#
+# Step 2: Examine the residual plots for the separate lines model to check if the
+#         assumptions for an F-test are met. 
+#
+# Step 3: If assumptions are met, perform a partial F-test for the hypothesis that
+#         the interaction terms can be dropped. (i.e. extra sum of squares test where the separate 
+#         lines model is the full model and the parallel lines model is the reduced model. This checks 
+#         if we can reduce down to using the parallel lines model instead). A high p-value indicates that
+#         the parallel lines model is adequate.
+#
+# NOTE: Step 3 essentially asks the question, does the relationship between SalePrice and house
+#       size change based on what neighborhood you are in? If the p-value is high, the slopes can be 
+#       the same (parallel lines), and the answer can be: No, the relationship does not change
+#       based on neighborhood. If the slopes cannot be the same, the relationship does change based
+#       on neighborhood.
+#
+# Step 4: If Step 3 showed that the interaction terms can be dropped, we may want to perform
+#         another partial F-test for the hypothesis that the intercepts in the parallel lines
+#         models are the same (i.e. full model=parallel lines, reduced model=equal lines).
+#
+# NOTE: Step 4 does not have an entirely logical interpretation in the context of the problem, 
+#       because it essentially asks "Does the SalePrice of a house with a square footage of zero
+#       change based on what neighborhood you're in?". (A more useful interpretation may be, does the
+#       minimum house price change based on what neighborhood you're in, however interpreting this way
+#       seems shakey because that is not really what the intercept represents). It must also be noted
+#       that attempting to interpret the intercept here is dangerous to begin with, as the minimum
+#       house size in the entire data set is 334 square feet, therefore statements made about houses
+#       with square footage below this value requires extrapolation, and are therefore dangerous and unlikely
+#       to be useful.
+
+```
+
+#Model 1: Separate Lines Model
+```{r}
+
+separate_fits <- lm(SalePrice~GrLivArea+
+                      Neighborhood+             # Add intercept adjustment terms
+                      Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
+                    data=century_df)
+
+summary(separate_fits)
+```
+
+
+```{r}
+
+# PLOT THE SEPARATE LINES MODEL
+plot_slr_via_mlr(fit=separate_fits, 
+                 df=century_df,
+                 model_type="separate_lines",
+                 explanatory_continuous="GrLivArea", 
+                 explantory_grouping="Neighborhood",
+                 response="SalePrice",
+                 alpha=0.5,
+                 plot_group_means=TRUE,
+                 identify_obs=c(524, 1299, 643, 725))
+
+```
+
+
+# Assessing Regression Assumptions for the Separate Lines Model
+
+## Linearity Assumption: Separate Lines Model
+```{r}
+
+plot_residuals(separate_fits, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+# The majority of the residual plot is a reasonable representation of the ideal "random cloud", providing evidence
+# that the linearity assumption is met for most of the data. We should note observations 1299, 643, 1424, and 725 do have
+# rather large residual values that may be worth investigating. 
+
+```
+
+# Indepdence Assumption: Separate Lines Model
+```{r}
+
+# From the residual plot above, do not see any "tracking" in the residuals. Based on how the data was collected
+# we do not have a reason to suspect that serial or cluster effects exist. The Independence assumption is always
+# difficult to be completely confident in without intimate knowledge of the data collection process, however
+# we will proceed with caution as if this assumption is met.
+
+```
+
+
+
+# Normality Assumption: Separate Lines Model
+```{r}
+
+plot_residual_qq(fit=separate_fits,
+                 dataframe=century_df,
+                 residual_type = "externally_studentized")
+
+
+# Based on the QQPlot of the externally studentized residuals shown below, we see that overall the quantiles of 
+# the residuals are linearly related to the theoretical quantiles of the normal distribution. That said, we again 
+# note that there are still the same few observations raising concern in terms of evidence against the normality
+# assumption (specifically: observations 725, 643, and 1299).
+#
+# An "S" shape in a residual QQPlot indicates that one of the distributions (the observed or theoretical), has  
+# longer tails than the other. In this QQplot we see the observations mentioned above (725, 643, 1299) forming
+# this characteristic "S" shape, which means for these particular data points the normality assumption is not met.
+```
+
+
+
+
+```{r}
+
+plot_residual_histogram(fit=separate_fits, 
+                        dataframe=century_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+
+# The residual histogram confirms what we see in the residual QQplot. This plot offers another perspective
+# but tells the same story; that are a few observations causing some significant "long taildness", which violates
+# the normality of errors assumption.
+
+```
+
+
+
+```{r}
+
+plot_residuals(separate_fits, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+# Lastly, we can review the plot of externally studentized residuals (shown two plots above, but reproduced here) 
+# in the context of the normality assumption.
+#
+# From the residual plot we see that, for the most part, the residuals seem to be normally distributed around zero,
+# and are not consistently shifted in either the positive (upward) or negative (downward) direction which would be 
+# indicative of a heavily skewed distribution. This plot also helps us identify some potential outliers, 
+# (observations 725, 643, 1299, 1424) that may be violating the normality assumption.
+
+```
+
+# Equal Variance Assumption: Separate Lines Model
+```{r}
+
+plot_residuals(separate_fits, 
+               dataframe=century_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+# Reviewing the residual plot in the context of the equal variance assumption, we do see some slight
+# "fanning" or "funnel shaped" pattern in the plot, which provides evidence against equality of variance.
+# Specifically, it seems that the variance may be greater for the more expensive homes.
+#
+# That said, the evidence against homoscedasticity is not extreme, and it seems that the 
+# spread of the residuals about zero is reasonably consistent across the range of fitted values for 
+# most observations (again with the exception of the same, previously mentioned, troublesome observations).
+#
+# In terms of a violation of equality of variance, observations 643 and 1299 are particularly concerning.
+# These observations have quite large residuals, and considering that there are no other
+# observations even close to these fitted values it would be rather unusual to observe such a large
+# residual value there. 
+#
+# Imagine taking just a handful of samples from a normal distribution, and having two of those samples 
+# be more than 4.5 standard deviations away from the mean. That would be cause to question whether or not 
+# those draws really came from the same population as the others, which is the exact question we are faced with 
+# when it comes to observations 643 and 1299. 
+#
+# Observation 1424 is less concerning because there are many other samples in that range of the fitted values,
+# and as more samples are taken we would expect a few large residuals to occur. This is because with a larger sample
+# size we expect the normal distributions (conditioned at each fixed X) to be more fully explored.
+#
+# Observation 725 also exists in a heavily populated area of the fitted values, however the extremely large 
+# residual (more than 6 standard deviations away from the mean), still seems very unlikely to occur even if
+# a moderate number of samples were taken (assuming observation 725 truly does come from a population with the
+# same variance as the other samples).
+#
+# Summary: Observations 725, 643, and 1299 show evidence that they may come from a population with a 
+#          different variance than the others, therefore these observations provide evidence against
+#          the equal variance assumption. Additionally, the slight fanning shown in the plot can be 
+#          interpreted as evidence against equality of variance, where there would be higher variability
+#          in more expensive homes than in lower priced homes. 
+```
+
+# Check for influential observations: Separate Lines Model
+```{r}
+plot_residual_vs_leverage(fit=separate_fits,
+                          dataframe=century_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=4.5)
+```
+
+```{r}
+plot_residual_vs_leverage(fit=separate_fits,
+                          dataframe=century_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=1.7)
+
+# Observations 643, 524 and 1299 all have leverage values greater than 3 times the
+# average leverage, as well as significantly large residuals. For observations 643 and 1299 
+# the residual values are more than 4.5 standard deviations from zero, while observation
+# 524 has leverage more than 1.7 standard deviations from zero.
+```
+
+
+
+```{r}
+
+# Statistical Sleuth Section 11.3, page 345
+# "Least Squares regression analysis is not resistant to outliers. One or two observations can
+# strongly influence the analysis, to the point where the answers to the questions of interest 
+# change when these isolated cases are excluded. Although any influential observation that comes
+# from a population other than the one under investigation should be removed, removing an observation
+# simply because it is influential is not justified. IN ANY CIRCUMSTANCE, IT IS UNWISE TO STATE 
+# CONCLUSIONS THAT HINGE ON ONE OR TWO DATA POINTS. SUCH A STATISTICAL STUDY SHOULD BE CONSIDERED
+# EXTREMELY FRAGILE. 
+
+# FOLLOW FLOW CHART ON PAGE 321, DISPLAY 11.8.
+# 1) Answer QOI #2 with all observations.
+# 2) Answer QOI #2 with observations 1299 and 524 removed.
+#
+# If the answer to QOI #2 changes in 1) and 2) above, then:
+#
+# Proceed with the analysis where observations 1299 and 524 and removed, then when reporting  
+# the results restrict the domain of inference to only houses that are smaller than 4000 square feet.
+
+```
+
+
+# Answer QOI #2 with all observations included.
+```{r}
+
+parallel_fits <- lm(SalePrice~GrLivArea +
+                      Neighborhood,        # Add intercept adjustments (Parallel lines model)
+                     data=century_df)
+
+summary(parallel_fits)
+```
+
+
+```{r}
+
+partial_f <- partial_f_test(full_model=separate_fits,
+                            reduced_model=parallel_fits)
+
+partial_f
+
+# This shows a partial (extra sum of squares) F-test for the hypothesis that
+# the interaction terms can be dropped. The very small p-value (6.148x10^-8)
+# provides convincing evidence that the parallel lines model is not an adequate
+# substitution for the separate lines model.
+#
+# In other words, the difference between the sum of squared residuals in the full
+# model and the reduced model is greater than could be explained by the extra parameters
+# in the full model simply modeling some chance variation in the data (statistical sleuth page 285).
+#
+# The fact that the interaction (slope adjustment) terms in the full model are significantly
+# different from zero (32.847, p-value=0.0025, and -24.566, p-value=0.00013) are also evidence
+# that agrees with this partial F-test result (i.e. that the parallel lines model is not an 
+# adequate replacement for the separate lines model).
+#
+
+```
+
+
+```{r}
+confint(separate_fits)
+
+# Answer to QOI #2, all observations in the dataset included:
+# 
+# The relationship between the SalePrice of a home and its square footage (GrLivArea) does
+# depend on what neighborhood the home is in. The dependence is such that the rate of change
+# of the mean home value associated with a 1 unit increase in living area is different depending
+# on what neighborhood the home is located in. 
+#
+# Specifically:
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the NAmes neighborhood is $54.316. Additionally, we are
+# 95% confident that the true value of this mean increase is contained within the interval ($45.24, $63.38).
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the BrkSide neighborhood, is $(54.316 + 32.847) = $87.163.
+# Additionally, we are 95% confident that the true value of this mean increase is contained within
+# the interval ($(54.316 + 11.5806), $(54.316 + 54.112)) = ($65.896, $108.428).
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the Edwards neighborhood, is $(54.316 - 24.566) = $29.75.
+# Additionally, we are 95% confident taht the true value of this mean increase is contained within 
+# the interval ($(54.316 - 37.073), $(54.316 - 12.057)) = ($17.243, $42.259).
+#
+#
+# NAmes Neighborhood    --> Best Estimate: $54.316, 95% CI: ($45.24, $63.38)
+# BrkSide Neighborhood  --> Best Estimate: $87.163, 95% CI: ($65.896, $108.428)
+# Edwards Neighborhood  --> Best Estimate: $29.75,  95% CI: ($17.243, $42.259)
+```
+
+# Answer QOI #2 with observations 524 and 1299 removed
+```{r}
+
+# Create a new dataframe where observations 524 and 1299 and been removed
+century_obsrm_df <- century_df[(century_df[,"Id"] != 524) & (century_df[,"Id"] != 1299),]
+
+# Fit the separate lines model on this new dataset where 
+# observations 524 and 1299 have been removed
+separate_fits_obsrm <- lm(SalePrice~GrLivArea+
+                            Neighborhood+             # Add intercept adjustment terms
+                            Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
+                          data=century_obsrm_df)
+
+
+summary(separate_fits_obsrm)
+
+```
+
+
+```{r}
+
+# Fit the parallel lines model using the dataset where 
+# observations 524 and 1299  have been removed
+parallel_fits_obsrm <- lm(SalePrice~GrLivArea +
+                            Neighborhood,        # Add intercept adjustments (Parallel lines model)
+                     data=century_obsrm_df)
+
+summary(parallel_fits_obsrm)
+```
+
+
+
+```{r}
+
+partial_f_obsrm <- partial_f_test(full_model=separate_fits_obsrm,
+                                  reduced_model=parallel_fits_obsrm)
+
+partial_f_obsrm
+
+# Although the evidence is significantly less (partial F-test p-value=0.001156 with observations
+# 526 and 1299 removed, compared to partial F-test p-value=6.148x10^-8 with all observations included)
+# The conclusion of the partial F-test has not changed. In other words, we still reject the hypothesis
+# that the parallel lines model is an adequate replacement for the separate lines model.
+#
+
+```
+
+
+```{r}
+confint(separate_fits_obsrm)
+
+# While the high level answer to the question of interest remains the same (i.e. that the relationship
+# between SalePrice and the square footage of a home does depend on what neighborhood the home is in,
+# and that the dependence is such that the rate of change in mean home value associated with a 1 unit
+# increase in square footage is different for each neighborhood), the specific details of this answer
+# have changed.
+#
+#
+# ANSWER TO QOI #2, WHEN OBSERVATIONS 524 AND 1299 ARE NOT INCLUDED IN THE ANALYSIS:
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the NAmes neighborhood is $54.316. Additionally, we are
+# 95% confident that the true value of this mean increase is contained within the interval ($45.79, $62.83).
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the BrkSide neighborhood, is $(54.316 + 32.847) = $87.163.
+# Additionally, we are 95% confident that the true value of this mean increase is contained within
+# the interval ($(54.316 + 12.866), $(54.316 + 52.826)) = ($67.182, $107.142).
+#
+# Our best estimate for the rate of change of the mean home value associated with a 1 unit
+# increase in square footage, for a home in the Edwards neighborhood, is $(54.316 + 21.660) = $75.976.
+# Additionally, we are 95% confident taht the true value of this mean increase is contained within 
+# the interval ($(54.316 + 4.357), $(54.316 + 38.96)) = ($58.673, $93.276).
+#
+# ========================================================================================================
+#
+# SUMMARY OF DIFFERENCES IN HOW QOI #2 IS ANSWERED, WITH AND WITHOUT OBSERVATION 524, 1299 REMOVAL
+#
+# WITH ALL OBSERVATIONS, RATE OF CHANGE OF MEAN SALEPRICE ASSOCIATED WITH 1 UNIT INCREASE IN SQFT:
+# 
+# NAmes Neighborhood    --> Best Estimate: $54.316, 95% CI: ($45.24, $63.38)
+# BrkSide Neighborhood  --> Best Estimate: $87.163, 95% CI: ($65.896, $108.428)
+# Edwards Neighborhood  --> Best Estimate: $29.75,  95% CI: ($17.243, $42.259)
+#
+# WITH OBS 524 AND 1299 REMOVED, RATE OF CHANGE OF MEAN SALEPRICE ASSOCIATED WITH 1 UNIT INCREASE IN SQFT:
+#
+# NAmes Neighborhood    --> Best Estimate: $54.316, 95% CI: ($45.79, $62.83)
+# BrkSide Neighborhood  --> Best Estimate: $87.163, 95% CI: ($67.182, $107.142)
+# Edwards Neighborhood  --> Best Estimate: $75.976, 95% CI: ($58.673, $93.276)
+#
+# SUMMARY: The best estimates for the NAmes and BrkSide neighborhoods were unchanged, and the confidence 
+#          intervals were only slightly effect, by an ammount that were surely not be of practical significance. 
+#
+#          The inference regarding the Edwards Neighborhood was EXTREMELY effected. The best estimate more than 
+#          doubled after removal of observations 524 and 1299 (from $29.75 to $75.976). Additionally, the 95%
+#          confidence limits are vastly different. The confidence intervals changed so much that the upper 
+#          bound of the interval with all observations included ($42.259) is smaller than the lower bound when
+#          observations 524 and 1299 are removed ($58.673). This change would absolutely be of practical significance,
+#          as we see the perspective on home prices in this neighborhood has completely changed simply by removing
+#          two observations. As the statistical sleuth says, "it is unwise to state statistical conclusions that hinge
+#          on just a few data points." From this perspective, it seems that the analysis with observations 524 and 1299
+#          must be included in the report.
+#
+# ========================================================================================================
+```
+
+# Metrics
+```{r}
+
+# Calculate PRESS (PREDICTION RESIDUAL SUM OF SQUARES) for the Separate Lines Model
+# that contains all observations. This value is an indicator for how well the model
+# should perform on new data.
+
+sep_lines_PRESS <- ols_press(model=separate_fits)
+sep_lines_PRESS
+
+```
+
+```{r}
+# Calculate PRESS (PREDICTION RESIDUAL SUM OF SQUARES) for the Separate Lines Model
+# where observations 524 and 1299 were removed
+sep_lines_PRESS_obsrm <- ols_press(model=separate_fits_obsrm)
+sep_lines_PRESS_obsrm
+```
+
+```{r}
+
+# Adjusted R-Squared for Separate Lines Model that contains all observations
+summary(separate_fits)$adj.r.squared
+
+```
+
+```{r}
+
+# Adjusted R-Squared for Separate Lines Model where 
+# observations 524 and 1299 were removed
+summary(separate_fits_obsrm)$adj.r.squared
+
+```
+
+# Revisiting Assumptions on Log Transformed Data
+```{r}
+
+# SEPARATE LINES MODEL ON LOG SALEPRICE DATA (ALL OBSERVATIONS).
+
+# Add a column for the log of SalePrice
+century_df[,"log_SalePrice"] <- log(century_df[,"SalePrice"])
+
+# SEPARATE LINES MODEL USING THE LOG OF SALEPRICE
+separate_fits_log <- lm(log_SalePrice~GrLivArea+
+                          Neighborhood+             # Add intercept adjustment terms
+                          Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
+                          data=century_df)
+
+
+summary(separate_fits_log)  
+```
+
+```{r}
+
+# SEPARATE LINES MODEL ON LOG SALEPRICE DATA (OBSERVATIONS 1299 AND 524 REMOVED).
+
+# Add a column for the log of SalePrice
+century_obsrm_df[,"log_SalePrice"] <- log(century_obsrm_df[,"SalePrice"])
+
+# SEPARATE LINES MODEL USING THE LOG OF SALEPRICE
+separate_fits_log_obsrm <- lm(log_SalePrice~GrLivArea+
+                              Neighborhood+             # Add intercept adjustment terms
+                              Neighborhood:GrLivArea,   # Add interaction terms (slope adjustments)
+                              data=century_obsrm_df)
+
+
+summary(separate_fits_log_obsrm)  
+```
+
+```{r}
+
+# LOG DATA, RESIDUAL QQ PLOT, ALL OBSERVATIONS 
+
+# QQ plot of residuals, separate lines model with observations 1299 and 524 removed.
+plot_residual_qq(fit=separate_fits_log,
+                 dataframe=century_df,
+                 residual_type = "externally_studentized")
+```
+
+```{r}
+
+# HISTOGRAM OF RESIDUALS, LOG DATA, ALL OBSERVATIONS 
+
+# Histogram of residuals, separate lines model with observations 1299 and 524 removed.
+plot_residual_histogram(fit=separate_fits_log, 
+                        dataframe=century_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+```
+
+
+
+```{r}
+
+# LOG DATA, RESIDUAL QQ PLOT, OBSERVATIONS 1299 AND 524 REMOVED
+
+# QQ plot of residuals, separate lines model with observations 1299 and 524 removed.
+plot_residual_qq(fit=separate_fits_log_obsrm,
+                 dataframe=century_obsrm_df,
+                 residual_type = "externally_studentized")
+```
+
+
+```{r}
+
+# HISTOGRAM OF RESIDUALS, LOG DATA, OBSERVATIONS 1299 AND 524 REMOVED
+
+# Histogram of residuals, separate lines model with observations 1299 and 524 removed.
+plot_residual_histogram(fit=separate_fits_log_obsrm, 
+                        dataframe=century_obsrm_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+```
+
+```{r}
+
+# PARTIAL F-TEST, COMPARING SEPARATE AND PARALLEL LINES MODELS, ON LOGGED DATA, WITH OBSERVATIONS 1299 AND 524 REMOVED
+
+
+parallel_fits_log <- lm(log_SalePrice~GrLivArea+
+                              Neighborhood,             # Add intercept adjustment terms
+                              data=century_df)
+
+
+
+partial_f_log <- partial_f_test(full_model=separate_fits_log,
+                                reduced_model=parallel_fits_log)
+
+
+partial_f_log
+```
+
+
+```{r}
+
+# PARTIAL F-TEST, COMPARING SEPARATE AND PARALLEL LINES MODELS, ON LOGGED DATA, WITH OBSERVATIONS 1299 AND 524 REMOVED
+
+parallel_fits_log_obsrm <- lm(log_SalePrice~GrLivArea+
+                              Neighborhood,             # Add intercept adjustment terms
+                              data=century_obsrm_df)
+
+
+
+partial_f_log_obsrm <- partial_f_test(full_model=separate_fits_log_obsrm,
+                                      reduced_model=parallel_fits_log_obsrm)
+
+
+partial_f_log_obsrm
+```
+
+# PART 2:
+```{r}
+
+
+## Project Part 2, TODO: 
+# 1) Model produced using backwards selection
+# 2) Model produced using forward selection
+# 3) Model produced using step wise selection
+# 4) Model produced using a custom method
+# 5) Plots for assumption assessment and influential point investigations for each of the 4 models above.
+# 6) Adjusted RSquare, CV PRESS and Kaggle Scores for the 4 models mentioned above. 
+
+
+```
+
+
+```{r}
+
+# Read in two .csvs files which contain the results of performing multiple rounds of feature selection techniques
+# (inlcuding stepwise, forward, backward and best subset) using various subsets of the predictors.
+
+gs1 <- read.csv("./Feature_Selections1.csv")
+gs1[,"Search_Round"] <- 1
+
+gs2 <- read.csv("./Feature_Selections2.csv")
+gs2[,"Search_Round"] <- 2
+
+# Combine gs1 and gs2 into a single dataframe.
+search_df <- rbind(gs1, gs2)
+```
+
+
+
+```{r}
+
+# Separate the searches that were predicting SalePrice directly, from those predicting the log of SalePrice.
+
+log_searches <- search_df[search_df[,"target_name"] == "Log_SalePrice",]
+linear_searches <- search_df[search_df[,"target_name"] == "SalePrice",]
+```
+
+
+
+# Log SalePrice Models
+
+## Log Forward Selection
+```{r}
+
+log_forward_df <- filter_dataframe(df=log_searches,
+                                   metric="PRESS",
+                                   algo_type="forward")
+
+head(log_forward_df)
+```
+
+
+```{r}
+
+# This cell fits a regression model using the predictors from the forward selection model that had the lowest
+# PRESS statistic, then uses that model to predict SalePrices for the test set, and saves those predictions
+# to a .csv file for submission to Kaggle.
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_forward_preds <- strsplit(x=log_forward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_forward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_forward_preds)
+
+
+log_fwd_submit_df <- generate_kaggle_submission(fit=log_forward_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_forward_selection_preds.csv")
+
+head(log_fwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14293
+```
+
+
+
+## Log Backward Selection
+```{r}
+log_backward_df <- filter_dataframe(df=log_searches,
+                                    metric="PRESS",
+                                    algo_type="backward")
+
+head(log_backward_df)
+```
+
+
+```{r}
+
+# This cell fits a regression model using the predictors from the backward selection model that had the lowest
+# PRESS statistic, then uses that model to predict SalePrices for the test set, and saves those predictions
+# to a .csv file for submission to Kaggle.
+#
+#
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_backward_preds <- strsplit(x=log_backward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_backward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_backward_preds)
+
+
+log_bwd_submit_df <- generate_kaggle_submission(fit=log_backward_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_backward_selection_preds2.csv")
+
+head(log_bwd_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14219
+```
+
+
+
+## Log Stepwise Selection
+```{r}
+
+log_stepwise_df <- filter_dataframe(df=log_searches,
+                                    metric="PRESS",
+                                    algo_type="stepwise")
+
+head(log_stepwise_df)
+```
+
+
+```{r}
+
+# This cell fits a regression model using the predictors from the stepwise selection model that had the lowest
+# PRESS statistic, then uses that model to predict SalePrices for the test set, and saves those predictions
+# to a .csv file for submission to Kaggle.
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_stepwise_preds <- strsplit(x=log_stepwise_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+log_stepwise_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_stepwise_preds)
+
+
+log_stp_submit_df <- generate_kaggle_submission(fit=log_stepwise_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_stepwise_selection_preds.csv")
+
+head(log_stp_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.14293
+```
+
+
+
+## Log Best Subset Selection
+```{r}
+
+log_best_subset_df <- filter_dataframe(df=log_searches,
+                                       metric="PRESS",
+                                       algo_type="best_subset")
+
+head(log_best_subset_df)
+```
+
+
+```{r}
+
+# This cell fits a regression model using the predictors from the best subset selection model that had the lowest
+# PRESS statistic, then uses that model to predict SalePrices for the test set, and saves those predictions
+# to a .csv file for submission to Kaggle.
+#
+# Note: due to computational constraints, in these sets of models, best subset selection was never run with
+#       more than 11 predictors at a time.
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=TRUE,
+                            ordinal_as_integer=FALSE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=TRUE,
+                           ordinal_as_integer=FALSE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_bestsubset_preds <- strsplit(x=log_best_subset_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+log_bestsubset_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_bestsubset_preds)
+
+
+log_bestsubset_submit_df <- generate_kaggle_submission(fit=log_bestsubset_lm,
+                                                test_data=test_df,
+                                                log_target=TRUE,
+                                                submission_filepath="./log_bestsubset_selection_preds.csv")
+
+head(log_bestsubset_submit_df)
+
+# Kaggle uses RMSE between the log of the predicted value and the log 
+# of the observed sales price
+#
+# Kaggle Score = 0.18134
+```
+
+
+
+# Assess Assumptions for the models found by the selection algorithms
+
+# Forward Selection Assumption Plots
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+
+plot_residual_qq(fit=log_forward_lm,
+                 dataframe=train_df,
+                 residual_type = "externally_studentized")
+
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residual_histogram(fit=log_forward_lm, 
+                        dataframe=train_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+
+```
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+
+plot_residual_vs_leverage(fit=log_forward_lm,
+                          dataframe=train_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=1.7)
+```
+
+
+
+```{r}
+plot_residuals(fit = log_forward_lm, 
+               dataframe=train_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE,
+               extreme_thresh_std = 4)
+```
+
+
+```{r}
+
+# The only reason log_forward_lm needs to be recreated here, is because the lm model was not fit using
+# the argument x=TRUE. When x=TRUE, the models matrix is returned, and this is required if you want the
+# model to be able to be used with the vif() function. 
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_forward_preds <- strsplit(x=log_forward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_forward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_forward_preds,
+                                        x=TRUE)
+
+
+vif(log_forward_lm)
+```
+
+
+
+# Backward Selection Plots
+```{r}
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+
+plot_residual_qq(fit=log_backward_lm,
+                 dataframe=train_df,
+                 residual_type = "externally_studentized",
+                 flag_nlargest = 6)
+```
+
+
+```{r}
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+
+plot_residual_histogram(fit=log_backward_lm, 
+                        dataframe=train_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+```
+
+
+```{r}
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residual_vs_leverage(fit=log_backward_lm,
+                          dataframe=train_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=1.7)
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residuals(log_backward_lm, 
+               dataframe=train_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5,
+               extreme_thresh_std = 4,
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+```
+
+
+
+```{r}
+
+# The only reason log_backward_lm needs to be recreated here, is because the lm model was not fit using
+# the argument x=TRUE. When x=TRUE, the models matrix is returned, and this is required if you want the
+# model to be able to be used with the vif() function. 
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_backward_preds <- strsplit(x=log_backward_df[1, "predictors_chosen"], split=" ")[[1]]
+
+log_backward_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_backward_preds,
+                                        x=TRUE)
+
+vif(log_backward_lm)
+```
+
+
+
+
+# Stepwise Selection Plots
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residual_qq(fit=log_stepwise_lm,
+                 dataframe=train_df,
+                 residual_type = "externally_studentized")
+
+```
+
+
+```{r}
+
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residual_histogram(fit=log_stepwise_lm, 
+                        dataframe=train_df,
+                        residual_type="externally_studentized", 
+                        overlay_normal = TRUE, 
+                        num_bins=75,
+                        normal_linecolor="purple")
+
+```
+
+```{r}
+
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residual_vs_leverage(fit=log_stepwise_lm,
+                          dataframe=train_df,
+                          residual_type="externally_studentized",
+                          resid_line_threshold=1.7)
+
+
+```
+
+
+```{r}
+
+train_df <- read.csv("./train.csv")
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+plot_residuals(log_stepwise_lm, 
+               dataframe=train_df,
+               residual_type="externally_studentized", 
+               plot_zero_hline=TRUE, 
+               extreme_thresh_regular=5, 
+               extreme_thresh_std = 4,
+               flag_extreme_values=TRUE, 
+               id_extreme_values=TRUE)
+
+```
+
+```{r}
+
+
+train_df <- read.csv("./train.csv")
+test_df <- read.csv("./test.csv")
+
+train_df <- train_df[!(train_df[,"Id"] %in% c(524, 1299)),]
+
+train_df <- clean_ames_data(df=train_df,
+                            ordinal_as_factor=FALSE,
+                            ordinal_as_integer=TRUE,
+                            filter_vifs=FALSE)
+
+test_df <- clean_ames_data(df=test_df,
+                           ordinal_as_factor=FALSE,
+                           ordinal_as_integer=TRUE,
+                           filter_vifs=FALSE,
+                           training_data=FALSE)
+
+log_stepwise_preds <- strsplit(x=log_stepwise_df[1, "predictors_chosen"], split=" ")[[1]]
+
+
+log_stepwise_lm <- build_lm_from_strings(df=train_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=log_stepwise_preds,
+                                        x=TRUE)
+
+vif(log_stepwise_lm)
+```
+
+
+
+
+# Additional attempts to improve Kaggle Score.
+```{r}
+
+
+library(forcats)
+source("./Functions.R")
+
+run_selection_and_submit <- function(predictors, combine_bath, combine_basement, combine_porch, p_remove=0.1,
+                                     bw_filepath="./backward_selection.csv"){
+  
+  train_df <<- read.csv("./train.csv")
+  test_df <- read.csv("./test.csv")
+  
+  train_df <<- train_df[!(train_df[,"Id"] %in% c(524, 1299, 458, 186, 692)),]
+  
+  
+  train_clean_df <<- clean_ames_data(df=train_df,
+                              ordinal_as_factor=TRUE,
+                              ordinal_as_integer=FALSE,
+                              filter_vifs=FALSE,
+                              target = "Log_SalePrice", 
+                              imbalance_threshold = 0.95)
+  
+  test_df <- clean_ames_data(df=test_df,
+                             ordinal_as_factor=TRUE,
+                             ordinal_as_integer=FALSE,
+                             filter_vifs=FALSE,
+                             training_data=FALSE, 
+                             target="Log_SalePrice",
+                             imbalance_threshold = 0.95)  
+  
+  train_clean_df[,"Log_SalePrice"] <<- as.numeric(train_clean_df[,"Log_SalePrice"])
+  
+  train_clean_df[,"Age"] <- 2016 - train_clean_df[,"YearBuilt"]
+  test_df[,"Age"] <- 2016 - test_df[,"YearBuilt"]
+  
+  levels(train_clean_df[,"Neighborhood"])[levels(train_clean_df[,"Neighborhood"]) %in% 
+                                            c('MeadowV', 'IDOTRR', 'BrDale', 'OldTown', 'BrkSide', 'Edwards', 'SWISU')] <- "Neigh1"
+  
+  levels(train_clean_df[,"Neighborhood"])[levels(train_clean_df[,"Neighborhood"]) %in% 
+                                            c('Landmrk', 'Sawyer', 'NPkVill', 'Blueste', 'NAmes', 'Mitchel', 'SawyerW')] <- "Neigh2"
+  
+  levels(train_clean_df[,"Neighborhood"])[levels(train_clean_df[,"Neighborhood"]) %in% 
+                                           c('Greens', 'Gilbert', 'NWAmes', 'Blmngtn', 'CollgCr', 'Crawfor', 'ClearCr')] <- "Neigh3"
+  
+  levels(train_clean_df[,"Neighborhood"])[levels(train_clean_df[,"Neighborhood"]) %in% 
+                                          c('Somerst', 'Timber', 'Veenker', 'GrnHill', 'NoRidge', 'NridgHt', 'StoneBr')] <- "Neigh4"
+
+  levels(test_df[,"Neighborhood"])[levels(test_df[,"Neighborhood"]) %in% 
+                                            c('MeadowV', 'IDOTRR', 'BrDale', 'OldTown', 'BrkSide', 'Edwards', 'SWISU')] <- "Neigh1"
+  
+  levels(test_df[,"Neighborhood"])[levels(test_df[,"Neighborhood"]) %in% 
+                                            c('Landmrk', 'Sawyer', 'NPkVill', 'Blueste', 'NAmes', 'Mitchel', 'SawyerW')] <- "Neigh2"
+  
+  levels(test_df[,"Neighborhood"])[levels(test_df[,"Neighborhood"]) %in% 
+                                           c('Greens', 'Gilbert', 'NWAmes', 'Blmngtn', 'CollgCr', 'Crawfor', 'ClearCr')] <- "Neigh3"
+  
+  levels(test_df[,"Neighborhood"])[levels(test_df[,"Neighborhood"]) %in% 
+                                          c('Somerst', 'Timber', 'Veenker', 'GrnHill', 'NoRidge', 'NridgHt', 'StoneBr')] <- "Neigh4"
+
+  
+  
+  levels(train_clean_df[,"OverallQual"])[levels(train_clean_df[,"OverallQual"]) %in% 
+                                            c('10', '9')] <- "5"
+  
+  levels(train_clean_df[,"OverallQual"])[levels(train_clean_df[,"OverallQual"]) %in% 
+                                            c('8', '7')] <- "4"
+  
+  levels(train_clean_df[,"OverallQual"])[levels(train_clean_df[,"OverallQual"]) %in% 
+                                            c('6', '5')] <- "3"
+  
+  levels(train_clean_df[,"OverallQual"])[levels(train_clean_df[,"OverallQual"]) %in% 
+                                            c('4', '3')] <- "2"
+  
+  levels(train_clean_df[,"OverallQual"])[levels(train_clean_df[,"OverallQual"]) %in% 
+                                            c('2', '1')] <- "1"
+  
+  
+  
+  levels(test_df[,"OverallQual"])[levels(test_df[,"OverallQual"]) %in% 
+                                            c('10', '9')] <- "5"
+  
+  levels(test_df[,"OverallQual"])[levels(test_df[,"OverallQual"]) %in% 
+                                            c('8', '7')] <- "4"
+  
+  levels(test_df[,"OverallQual"])[levels(test_df[,"OverallQual"]) %in% 
+                                            c('6', '5')] <- "3"
+  
+  levels(test_df[,"OverallQual"])[levels(test_df[,"OverallQual"]) %in% 
+                                            c('4', '3')] <- "2"
+  
+  levels(test_df[,"OverallQual"])[levels(test_df[,"OverallQual"]) %in% 
+                                            c('2', '1')] <- "1"
+  
+  
+  
+  cols_to_remove_train <- c("SalePrice",  "Id", "Utilities", "MSSubClass", "GarageFinish", "BsmtFinType1", "BsmtFinType2")
+  cols_to_remove_test <- c("SalePrice", "Utilities", "MSSubClass", "GarageFinish", "BsmtFinType1", "BsmtFinType2", "YearBuilt")
+  
+  
+  if(combine_bath){
+    train_clean_df[,"TotalBath"] <- train_clean_df[,"BsmtHalfBath"] + train_clean_df[,"BsmtFullBath"] + train_clean_df[,"FullBath"] + train_clean_df[,"HalfBath"]
+    test_df[,"TotalBath"] <- test_df[,"BsmtHalfBath"] + test_df[,"BsmtFullBath"] + test_df[,"FullBath"] + test_df[,"HalfBath"] 
+    cols_to_remove_train <- append(cols_to_remove_train, c("BsmtHalfBath", "BsmtFullBath", "FullBath", "HalfBath"))
+    cols_to_remove_test <- append(cols_to_remove_test, c("BsmtHalfBath", "BsmtFullBath", "FullBath", "HalfBath"))
+  }
+  
+  if(combine_basement){
+    train_clean_df[,"TotalBmstFinSF"] <- train_clean_df[,"BsmtFinSF1"] + train_clean_df[,"BsmtFinSF2"]
+    test_df[,"TotalBmstFinSF"] <- test_df[,"BsmtFinSF1"] + test_df[,"BsmtFinSF2"]
+    cols_to_remove_train <- append(cols_to_remove_train, c("BsmtFinSF1", "BsmtFinSF2"))
+    cols_to_remove_test <- append(cols_to_remove_test, c("BsmtFinSF1", "BsmtFinSF2"))
+  }
+    
+  if(combine_porch){
+    train_clean_df[,"TotalPorchSF"] <- train_clean_df[,"ScreenPorch"] + train_clean_df[,"EnclosedPorch"] + train_clean_df[,"OpenPorchSF"]
+    test_df[,"TotalPorchSF"] <- test_df[,"ScreenPorch"] + test_df[,"EnclosedPorch"] + test_df[,"OpenPorchSF"]
+    cols_to_remove_train <- append(cols_to_remove_train, c("ScreenPorch", "EnclosedPorch", "OpenPorchSF"))
+    cols_to_remove_test <- append(cols_to_remove_test, c("ScreenPorch", "EnclosedPorch", "OpenPorchSF"))
+  }
+  
+  train_final_df <<- as.data.frame(train_clean_df[,!(names(train_clean_df) %in% cols_to_remove_train)])
+  test_df <- test_df[, !(names(test_df) %in% cols_to_remove_test)]
+  
+  bw_lm <<- lm(Log_SalePrice~TotalIndoorSF+
+                 OverallQual+
+                 Neighborhood+
+                 OverallCond+
+                 BsmtUnfSF+
+                 Age+
+                 GarageCars+
+                 FireplaceQu+
+                 Fireplaces:FireplaceQu+
+                 MSZoning+
+                 LotArea+
+                 BsmtExposure+
+                 YearRemodAdd+
+                 LotConfig+
+                 TotRmsAbvGrd+
+                 BedroomAbvGr+
+                 KitchenAbvGr:KitchenQual+
+                 KitchenAbvGr+
+                 HeatingQC+
+                 GarageArea+
+                 Age+
+                 KitchenQual+
+                 Functional+
+                 WoodDeckSF+
+                 LotFrontage+
+                 GarageQual+
+                 LowQualFinSF+
+                 MasVnrType+
+                 TotalIndoorSF:OverallQual+
+                 TotalIndoorSF:OverallCond+
+                 TotalIndoorSF:Neighborhood+
+                 TotalIndoorSF:BedroomAbvGr+
+                 TotalBmstFinSF+
+                 LotArea:OverallQual+
+                 LotArea:OverallCond+
+                 Neighborhood:OverallQual+
+                 TotalPorchSF:Neighborhood+
+                 TotalBmstFinSF:Neighborhood+
+                 TotalBmstFinSF:BsmtQual+
+                 TotalBath:Neighborhood, 
+               data=train_final_df)
+
+  
+  bw_select <<- olsrr::ols_step_backward_p(model=bw_lm,
+                                           prem=p_remove)
+  
+  
+  bw_select_coefs <- attr(bw_select$model$terms , "term.labels") 
+  
+  bw_select_lm <- build_lm_from_strings(df=train_clean_df, 
+                                        response_var ="Log_SalePrice", 
+                                        explanatory_vars=bw_select_coefs,
+                                        x=TRUE)
+  
+  
+  bw_select_df <- generate_kaggle_submission(fit=bw_select_lm,
+                                             test_data=test_df,
+                                             log_target=TRUE,
+                                             submission_filepath="./bw_temp.")
+  
+  
+  
+  bw_select_df[bw_select_df[,"SalePrice"] > 745000, "SalePrice"] <- 745000
+  
+  write.csv(bw_select_df, bw_filepath, row.names=FALSE)
+  
+  return(bw_select)
+}
+
+```
+
+
+
+```{r}
+
+
+features <- c("TotalIndoorSF", "OverallQual", "Neighborhood", "OverallCond", "BsmtUnfSF", "YearBuilt", "GarageCars", "MSZoning", 
+              "FireplaceQu", "Functional", "LotArea", "YearRemodAdd", "HeatingQC", "TotRmsAbvGrd", "KitchenAbvGr",
+              "BsmtExposure", "GarageArea", "KitchenQual", "WoodDeckSF", "LotFrontage", "GarageQual", "LowQualFinSF", "MasVnrType", 
+              "LotConfig", "ExterCond", "BedroomAbvGr", "TotalIndoorSF:OverallQual", "TotalIndoorSF:Neighborhood", 
+              "TotalIndoorSF:OverallCond", "LotArea:OverallQual", "Neighborhood:OverallQual","TotalPorchSF", "TotalBmstFinSF", 
+              "BsmtHalfBath", "BsmtFullBath", "FullBath", "HalfBath")
+
+
+backward_selection <- run_selection_and_submit(predictors=features, 
+                                               combine_bath=TRUE, 
+                                               combine_basement=TRUE, 
+                                               combine_porch=TRUE,
+                                               p_remove=0.001,
+                                               bw_filepath="./FINAL_SUBMIT_5.csv")
+
+
+
+
+backward_selection$model
+backward_selection$removed
+names(backward_selection)
+```
+
+
+
