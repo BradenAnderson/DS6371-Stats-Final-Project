@@ -301,7 +301,7 @@ build_lm_from_strings <- function(df, response_var, explanatory_vars, x=FALSE){
   lm_formula <- as.formula(paste0(response_var, "~",str_c(explanatory_vars, collapse=" + ")))
   
   # Fit the model
-  fit <- lm(lm_formula, data=df, x=x)
+  fit <- lm(lm_formula, data=as.data.frame(df), x=x)
   
   return(fit)
   
